@@ -46,7 +46,7 @@ impl GitCmd {
         })
     }
 
-    fn open_res_file(&self) -> GitRes {
+    pub fn open_res_file(&self) -> GitRes {
         if self.config_path.is_file() {
             let content = std::fs::read_to_string(self.config_path.as_path()).unwrap();
             serde_json::from_str::<GitRes>(&content).unwrap()
@@ -56,13 +56,13 @@ impl GitCmd {
     }
 
     // 更新资源记录文件
-    fn update_res_file(&self, git_res: &GitRes) {
+    pub fn update_res_file(&self, git_res: &GitRes) {
         let mut res = self.open_res_file();
         res.merge(git_res);
         self.write_res_file(&res);
     }
 
-    fn write_res_file(&self, git_res: &GitRes) {
+    pub fn write_res_file(&self, git_res: &GitRes) {
         let new_content = serde_json::to_string_pretty(&git_res).unwrap();
 
         match std::fs::write(self.config_path.as_path(), new_content.as_bytes()) {
