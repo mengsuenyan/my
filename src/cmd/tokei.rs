@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Command as StdCommand};
 
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
-use crate::{fs::CodeInfo, ty::TableShow};
+use crate::{fs::CodeInfo, ty::TableShow, cmd::GitCmd};
 
 use super::Cmd;
 
@@ -42,7 +42,7 @@ impl Cmd for TokeiCmd {
 
     fn run(&self, m: &ArgMatches) {
         let dir = match m.get_one::<PathBuf>("dir").cloned() {
-            Some(dir) => dir,
+            Some(dir) => dir.canonicalize().unwrap(),
             None => match std::env::current_dir() {
                 Ok(dir) => dir,
                 Err(e) => panic!("{}", e),
@@ -60,5 +60,17 @@ impl Cmd for TokeiCmd {
         let code_info = CodeInfo::from_tokei_output(&tokei).unwrap();
 
         println!("{}", code_info.table());
+
+        let git_cmd = match GitCmd::new() {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                log::error!("{e}");
+                return;
+            },
+        };
+
+        let mut res = git_cmd.open_res_file();
+        res.update_code_info(dir.as_path(), code_info);
+        git_cmd.write_res_file(&res);
     }
 }

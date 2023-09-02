@@ -212,6 +212,13 @@ impl GitRes {
         self.info.iter().any(|info| info.path() == path)
     }
 
+    pub fn update_code_info(&mut self, path: &Path, code_info: CodeInfo) {
+        self.info.iter_mut().find(|i| i.path() == path).map(|i| {
+            log::info!("update the `{}` code info", i.path().display());
+            i.code_info = Some(code_info);
+        });
+    }
+
     pub fn to_vec(&self) -> Vec<GitInfo> {
         self.info.clone()
     }
