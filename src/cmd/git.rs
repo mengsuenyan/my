@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use clap::{value_parser, Arg, ArgAction, Command};
+use clap::{value_parser, Arg, ArgAction, Command, ArgMatches};
 use regex::Regex;
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -352,6 +352,19 @@ impl GitCmd {
         res.reduce();
         self.write_res_file(&res);
     }
+
+    fn temp_cmd(&self, m: &ArgMatches) -> GitRes {
+        let rules = m.get_many::<String>("rule").unwrap().collect::<Vec<_>>();
+        let (mut finds, res) = (GitRes::new(), self.open_res_file());
+        for info in res.iter() {
+            let path = info.path();
+            if rules.iter().any(|s| path.join(s.as_str()).is_dir()) {
+                finds.add_git_info(info);
+            }
+        }
+
+        finds
+    }
 }
 
 impl Cmd for GitCmd {
@@ -509,6 +522,19 @@ impl Cmd for GitCmd {
                 Command::new("reduce")
                 .about("remove duplicate entries in the git resource file")
             )
+            .subcommand(
+                Command::new("temp")
+                .about("find the repository that have temporary directory")
+                .arg(
+                    Arg::new("rule")
+                    .value_name("RULEs")
+                    .action(ArgAction::Append)
+                    .required(false)
+                    .default_values(["target", "node_modules", "build"])
+                    .value_parser(value_parser!(String))
+                    .help("to specify the temporary directory")
+                )
+            )
     }
 
     fn run(&self, m: &clap::ArgMatches) {
@@ -608,17 +634,20 @@ impl Cmd for GitCmd {
             Some(("rm", m)) => {
                 let path = m.get_one::<PathBuf>("dir").unwrap();
                 self.delete(path.as_path());
-            }
+            },
             Some(("open", _m)) => {
                 println!("{}", self.open_res_file());
             },
             Some(("reduce", _m)) => {
                 self.reduce();
+            },
+            Some(("temp", m)) => {
+                println!("{}", self.temp_cmd(m));
             }
             Some((name @ _, _)) => {
                 panic!("unsupport for the {}", name);
-            }
-            None => {}
+            },
+            None => {},
         }
 
         // let r = GitRes::from_my_res(
