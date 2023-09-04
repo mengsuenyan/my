@@ -484,22 +484,12 @@ impl Cmd for GitCmd {
                 Command::new("mv")
                 .about("mv git repository from path to another path")
                 .arg(
-                    Arg::new("from")
-                    .long("from")
-                    .short('f')
-                    .action(ArgAction::Set)
+                    Arg::new("dirs")
+                    .value_names(["FROM", "TO"])
                     .required(true)
+                    .action(ArgAction::Append)
                     .value_parser(value_parser!(PathBuf))
-                    .help("to specify the from directory")
-                )
-                .arg(
-                    Arg::new("to")
-                    .long("to")
-                    .short('t')
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("to specify the to directory")
+                    .help("mv git repository from FROM to TO directory")
                 )
             )
             .subcommand(
@@ -627,9 +617,8 @@ impl Cmd for GitCmd {
                 self.copy(from.as_path(), to.as_path());
             },
             Some(("mv", m)) => {
-                let from = m.get_one::<PathBuf>("from").unwrap();
-                let to = m.get_one::<PathBuf>("to").unwrap();
-                self.mv(from.as_path(), to.as_path());
+                let dirs = m.get_many::<PathBuf>("dirs").unwrap().collect::<Vec<_>>();
+                self.mv(dirs[0].as_path(), dirs[1].as_path());
             },
             Some(("rm", m)) => {
                 let path = m.get_one::<PathBuf>("dir").unwrap();
