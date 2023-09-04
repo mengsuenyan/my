@@ -365,6 +365,13 @@ impl GitCmd {
 
         finds
     }
+
+    fn search_cmd(&self, m: &ArgMatches) -> GitRes {
+        let name = m.get_one::<String>("name").unwrap();
+        let res = self.open_res_file();
+
+        res.iter().filter(|s| s.name() == name).into()
+    }
 }
 
 impl Cmd for GitCmd {
@@ -525,6 +532,18 @@ impl Cmd for GitCmd {
                     .help("to specify the temporary directory")
                 )
             )
+            .subcommand(
+                Command::new("search")
+                .about("search specified repository in the git resources")
+                .arg(
+                    Arg::new("name")
+                    .value_name("NAME")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .value_parser(value_parser!(String))
+                    .help("to specify the repository name")
+                )
+            )
     }
 
     fn run(&self, m: &clap::ArgMatches) {
@@ -632,7 +651,10 @@ impl Cmd for GitCmd {
             },
             Some(("temp", m)) => {
                 println!("{}", self.temp_cmd(m));
-            }
+            },
+            Some(("search", m)) => {
+                println!("{}", self.search_cmd(m));
+            },
             Some((name @ _, _)) => {
                 panic!("unsupport for the {}", name);
             },

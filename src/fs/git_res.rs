@@ -378,6 +378,18 @@ impl From<&GitInfo> for GitRes {
     }
 }
 
+impl<'a, T> From<T> for GitRes 
+    where T: std::iter::Iterator<Item = &'a GitInfo> {
+    fn from(value: T) -> Self {
+        let mut res = Self::new();
+        for info in value {
+            res.add_git_info(info);
+        }
+
+        res
+    }
+}
+
 impl From<ResourceInfo> for GitRes {
     fn from(value: ResourceInfo) -> Self {
         Self::from(&value)
