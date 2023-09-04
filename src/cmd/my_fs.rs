@@ -87,7 +87,7 @@ impl Cmd for MyFsCmd {
                 Some("dir") => Box::new(|p| p.is_dir()),
                 Some("symlink") => Box::new(|p| p.is_symlink()),
                 Some(_) => Box::new(|_| false),
-                None => Box::new(|_| false),
+                None => Box::new(|_| true),
             };
 
         let res = if m.get_flag("list") {
