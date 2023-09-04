@@ -370,7 +370,9 @@ impl GitCmd {
         let name = m.get_one::<String>("name").unwrap();
         let res = self.open_res_file();
 
-        res.iter().filter(|s| s.name() == name).into()
+        let re = Regex::new(name.as_str()).unwrap();
+
+        res.iter().filter(|s| re.is_match(s.name())).into()
     }
 }
 
