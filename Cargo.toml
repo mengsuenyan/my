@@ -1,6 +1,6 @@
 [package]
 name = "my"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.72"
 
@@ -10,7 +10,7 @@ rust-version = "1.72"
 anyhow = { version = "1.0.75" }
 thiserror = "1.0.47"
 log = "0.4.19"
-clap = { version = "4.3.11" }
+clap = { version = "4.3.11", features = ["string", "cargo"] }
 serde = { version = "1.0.166", features = ["derive"]}
 serde_json = { version = "1.0.105" }
 chrono = { version = "0.4.26", default-features = false, features = ["clock"]}
