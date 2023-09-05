@@ -103,8 +103,8 @@ impl GitCmd {
 
     fn remote_cmd(&self, path: &[PathBuf]) -> GitRes {
         let mut git_res = GitRes::new();
-        for p in path.into_iter() {
-            match self.remote(&p, false) {
+        for p in path.iter() {
+            match self.remote(p, false) {
                 Ok(info) => {
                     git_res.add_git_info(&info);
                 }
@@ -174,11 +174,11 @@ impl GitCmd {
 
     /// git remote -v获取仓库地址
     fn remote(&self, path: &Path, is_only_url: bool) -> Result<GitInfo, MyError> {
-        let _guard = WorkingdirGuard::new(&self.cur_dir, &path);
+        let _guard = WorkingdirGuard::new(&self.cur_dir, path);
         let s = Self::git(StdCommand::new("git").args(["remote", "-v"]))?;
         let git_info = GitInfo::new(path);
 
-        let re = Regex::new(r#"\w+\s+(?<url>.*)\s+\("#)
+        let re = Regex::new(r"\w+\s+(?<url>.*)\s+\(")
             .map_err(|e| MyError::RegexFailed(format!("{e}")))?;
         for line in s.lines() {
             if let Some(cap) = re.captures(line) {
@@ -590,7 +590,7 @@ impl Cmd for GitCmd {
             self.update_res_file(&r);
         }
 
-        let max_try = m.get_one::<usize>("max-try").copied().unwrap_or_else(|| 7);
+        let max_try = m.get_one::<usize>("max-try").copied().unwrap_or(7);
         if let Some(lvl) = m.get_one::<usize>("update").copied() {
             let r = self.update_cmd(&path, lvl, max_try);
             println!("{}", r);
@@ -602,7 +602,7 @@ impl Cmd for GitCmd {
             Some(("clone", m)) => {
                 let target_dir = m
                     .get_one::<PathBuf>("dir")
-                    .map(|p| p.clone())
+                    .cloned()
                     .unwrap_or_else(|| self.cur_dir.clone());
 
                 let mut url_str = pipe_str.clone();
@@ -651,7 +651,7 @@ impl Cmd for GitCmd {
             Some(("search", m)) => {
                 println!("{}", self.search_cmd(m));
             }
-            Some((name @ _, _)) => {
+            Some((name, _)) => {
                 panic!("unsupport for the {}", name);
             }
             None => {}

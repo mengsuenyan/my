@@ -36,9 +36,9 @@ impl EncodeType {
     }
 }
 
-impl Into<u64> for EncodeType {
-    fn into(self) -> u64 {
-        Self::head() & (self as u64)
+impl From<EncodeType> for u64 {
+    fn from(value: EncodeType) -> Self {
+        EncodeType::head() & (value as u64)
     }
 }
 

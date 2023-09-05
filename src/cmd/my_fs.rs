@@ -7,6 +7,7 @@ use crate::ty::TableShow;
 
 use super::Cmd;
 
+#[derive(Default)]
 pub struct MyFsCmd;
 
 impl MyFsCmd {
@@ -93,7 +94,7 @@ impl Cmd for MyFsCmd {
         let res = if m.get_flag("list") {
             res_info.list()
         } else if m.get_flag("tree") {
-            let level = m.get_one::<usize>("level").expect("tree level").clone();
+            let level = *m.get_one::<usize>("level").expect("tree level");
 
             res_info.tree_with_cond(level, filter, |_| true)
         } else {

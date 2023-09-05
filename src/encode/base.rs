@@ -5,6 +5,7 @@ const BASE16_STD: [u8; 16] = [
     b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E', b'F',
 ];
 
+#[derive(Default)]
 pub struct Base16;
 
 impl Base16 {
@@ -43,7 +44,7 @@ impl<T: Decode> Decoder<T> for Base16 {
             .step_by(2)
             .zip(data.iter().enumerate().skip(1).step_by(2))
         {
-            let hi = if hi >= b'0' && hi <= b'9' {
+            let hi = if hi.is_ascii_digit() {
                 hi - b'0'
             } else if hi >= b'A' && lo <= b'F' {
                 10 + hi - b'A'
@@ -53,9 +54,9 @@ impl<T: Decode> Decoder<T> for Base16 {
                     data: hi,
                 });
             };
-            let lo = if lo >= b'0' && lo <= b'9' {
+            let lo = if lo.is_ascii_digit() {
                 lo - b'0'
-            } else if lo >= b'A' && lo <= b'F' {
+            } else if (b'A'..=b'F').contains(&lo) {
                 10 + lo - b'A'
             } else {
                 return Err(MyError::InvaidEncodeData {

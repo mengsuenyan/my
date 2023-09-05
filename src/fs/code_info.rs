@@ -86,9 +86,9 @@ impl CodeInfo {
         let Value::Object(json) =
             Value::from_str(s).map_err(|e| MyError::JsonParseFailed(format!("{e}")))?
         else {
-            return Err(MyError::JsonParseFailed(format!(
-                "Tokei output is not json object"
-            )));
+            return Err(MyError::JsonParseFailed(
+                "Tokei output is not json object".to_string(),
+            ));
         };
 
         let mut code_info = Self::default();
@@ -150,7 +150,7 @@ impl TableShow for CodeInfo {
                 .for_each(|(r, l)| r.push(l));
         }
 
-        Self::head().into_iter().zip(res.into_iter()).collect()
+        Self::head().into_iter().zip(res).collect()
     }
 }
 

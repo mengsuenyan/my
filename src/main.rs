@@ -33,7 +33,7 @@ fn main() {
         Some((GitCmd::NAME, m)) => {
             git.run(m);
         }
-        Some((name @ _, _)) => {
+        Some((name, _)) => {
             panic!("unsupport for {}", name)
         }
         None => {}
