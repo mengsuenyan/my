@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Command as StdCommand};
 
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
-use crate::{fs::CodeInfo, ty::TableShow, cmd::GitCmd};
+use crate::{cmd::GitCmd, fs::CodeInfo, ty::TableShow};
 
 use super::Cmd;
 
@@ -66,7 +66,7 @@ impl Cmd for TokeiCmd {
             Err(e) => {
                 log::error!("{e}");
                 return;
-            },
+            }
         };
 
         let mut res = git_cmd.open_res_file();

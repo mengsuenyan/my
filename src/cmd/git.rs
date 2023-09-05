@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use clap::{value_parser, Arg, ArgAction, Command, ArgMatches};
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use regex::Regex;
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -328,17 +328,17 @@ impl GitCmd {
             StdCommand::new("cp")
                 .arg("-rfv")
                 .arg(format!("{}", from.display()))
-                .arg(format!("{}", to.display()))
+                .arg(format!("{}", to.display())),
         ) {
             Ok(s) => {
                 log::info!("{s}");
                 to.push(from.file_name().unwrap());
                 let git_res = self.remote_cmd(&[to]);
                 self.update_res_file(&git_res);
-            },
+            }
             Err(e) => {
                 panic!("{e}");
-            },
+            }
         }
     }
 
@@ -469,82 +469,76 @@ impl Cmd for GitCmd {
             )
             .subcommand(
                 Command::new("cp")
-                .about("copy git repository from path to another path")
-                .arg(
-                    Arg::new("from")
-                    .long("from")
-                    .short('f')
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("to specify the from directory")
-                )
-                .arg(
-                    Arg::new("to")
-                    .long("to")
-                    .short('t')
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("to specify the to directory")
-                )
+                    .about("copy git repository from path to another path")
+                    .arg(
+                        Arg::new("from")
+                            .long("from")
+                            .short('f')
+                            .action(ArgAction::Set)
+                            .required(true)
+                            .value_parser(value_parser!(PathBuf))
+                            .help("to specify the from directory"),
+                    )
+                    .arg(
+                        Arg::new("to")
+                            .long("to")
+                            .short('t')
+                            .action(ArgAction::Set)
+                            .required(true)
+                            .value_parser(value_parser!(PathBuf))
+                            .help("to specify the to directory"),
+                    ),
             )
             .subcommand(
                 Command::new("mv")
-                .about("mv git repository from path to another path")
-                .arg(
-                    Arg::new("dirs")
-                    .value_names(["FROM", "TO"])
-                    .required(true)
-                    .action(ArgAction::Append)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("mv git repository from FROM to TO directory")
-                )
+                    .about("mv git repository from path to another path")
+                    .arg(
+                        Arg::new("dirs")
+                            .value_names(["FROM", "TO"])
+                            .required(true)
+                            .action(ArgAction::Append)
+                            .value_parser(value_parser!(PathBuf))
+                            .help("mv git repository from FROM to TO directory"),
+                    ),
             )
             .subcommand(
-                Command::new("rm")
-                .about("rm git repository")
-                .arg(
+                Command::new("rm").about("rm git repository").arg(
                     Arg::new("dir")
-                    .value_name("DIR")
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("to specify the deleted directory")
-                )
+                        .value_name("DIR")
+                        .action(ArgAction::Set)
+                        .required(true)
+                        .value_parser(value_parser!(PathBuf))
+                        .help("to specify the deleted directory"),
+                ),
             )
+            .subcommand(Command::new("open").about("open git resource file"))
             .subcommand(
-                Command::new("open")
-                .about("open git resource file")
-            )
-            .subcommand(
-                Command::new("reduce")
-                .about("remove duplicate entries in the git resource file")
+                Command::new("reduce").about("remove duplicate entries in the git resource file"),
             )
             .subcommand(
                 Command::new("temp")
-                .about("find the repository that have temporary directory")
-                .arg(
-                    Arg::new("rule")
-                    .value_name("RULEs")
-                    .action(ArgAction::Append)
-                    .required(false)
-                    .default_values(["target", "node_modules", "build"])
-                    .value_parser(value_parser!(String))
-                    .help("to specify the temporary directory")
-                )
+                    .about("find the repository that have temporary directory")
+                    .arg(
+                        Arg::new("rule")
+                            .value_name("RULEs")
+                            .action(ArgAction::Append)
+                            .required(false)
+                            .default_values(["target", "node_modules", "build"])
+                            .value_parser(value_parser!(String))
+                            .help("to specify the temporary directory"),
+                    ),
             )
             .subcommand(
                 Command::new("search")
-                .about("search specified repository in the git resources")
-                .arg(
-                    Arg::new("name")
-                    .value_name("NAME")
-                    .action(ArgAction::Set)
-                    .required(true)
-                    .value_parser(value_parser!(String))
-                    .help("to specify the repository name")
-                )
+                    .about("search specified repository in the git resources")
+                    .arg(
+                        Arg::new("name")
+                            .value_name("NAME")
+                            .action(ArgAction::Set)
+                            .required(true)
+                            .value_parser(value_parser!(String))
+                            .help("to specify the repository name"),
+                    ),
             )
     }
 
@@ -636,31 +630,31 @@ impl Cmd for GitCmd {
                 let from = m.get_one::<PathBuf>("from").unwrap();
                 let to = m.get_one::<PathBuf>("to").unwrap();
                 self.copy(from.as_path(), to.as_path());
-            },
+            }
             Some(("mv", m)) => {
                 let dirs = m.get_many::<PathBuf>("dirs").unwrap().collect::<Vec<_>>();
                 self.mv(dirs[0].as_path(), dirs[1].as_path());
-            },
+            }
             Some(("rm", m)) => {
                 let path = m.get_one::<PathBuf>("dir").unwrap();
                 self.delete(path.as_path());
-            },
+            }
             Some(("open", _m)) => {
                 println!("{}", self.open_res_file());
-            },
+            }
             Some(("reduce", _m)) => {
                 self.reduce();
-            },
+            }
             Some(("temp", m)) => {
                 println!("{}", self.temp_cmd(m));
-            },
+            }
             Some(("search", m)) => {
                 println!("{}", self.search_cmd(m));
-            },
+            }
             Some((name @ _, _)) => {
                 panic!("unsupport for the {}", name);
-            },
-            None => {},
+            }
+            None => {}
         }
 
         // let r = GitRes::from_my_res(

@@ -10,7 +10,11 @@ fn main() {
 
     let (myfs, tokei, git) = (MyFsCmd::new(), TokeiCmd::new(), GitCmd::new().unwrap());
 
-    let version = format!("{}-{}", clap::crate_version!(), DateTime::<Local>::from(SystemTime::now()).format("%Y/%m/%d-%H:%M:%S:%Z"));
+    let version = format!(
+        "{}-{}",
+        clap::crate_version!(),
+        DateTime::<Local>::from(SystemTime::now()).format("%Y/%m/%d-%H:%M:%S:%Z")
+    );
     let app = Command::new("my")
         .version(version)
         .about("my resource management")
