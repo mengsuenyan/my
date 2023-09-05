@@ -238,11 +238,11 @@ impl GitCmd {
             match Self::git(StdCommand::new("git").args(["fetch", "origin"])) {
                 Ok(s) => {
                     git_res.add_git_info(&rep);
-                    log::info!("Ok. {}", s);
+                    log::info!("Ok. {} remaning `{}` repository to update", s, infos.len());
                     cnt = 0;
                 }
                 Err(e) => {
-                    log::error!("{e}");
+                    log::error!("{e}\nremaning `{} repository to update", infos.len() + 1);
                     if cnt < max_try {
                         infos.push_front(rep)
                     } else {
