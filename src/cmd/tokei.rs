@@ -6,6 +6,7 @@ use crate::{cmd::GitCmd, fs::CodeInfo, ty::TableShow};
 
 use super::Cmd;
 
+#[derive(Default)]
 pub struct TokeiCmd;
 
 impl TokeiCmd {

@@ -22,7 +22,7 @@ pub struct ResourceInfo {
     subs: Option<Vec<u64>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Resources {
     res_map: HashMap<u64, Vec<Rc<ResourceInfo>>>,
     res: Vec<Rc<ResourceInfo>>,
@@ -97,7 +97,9 @@ impl ResourceInfo {
             self.subs = Some(vec![]);
         }
 
-        self.subs.as_mut().map(|s| s.push(item.id));
+        if let Some(s) = self.subs.as_mut() {
+            s.push(item.id);
+        }
     }
 
     pub fn list(&self) -> Resources {
@@ -126,10 +128,8 @@ impl ResourceInfo {
                 if ele.metadata.as_ref().map(|m| m.is_dir()) == Some(false) {
                     is_continue = true;
                 }
-            } else {
-                if !ele.path.is_dir() {
-                    is_continue = true;
-                }
+            } else if !ele.path.is_dir() {
+                is_continue = true;
             }
 
             // 只遍历指定层级
@@ -234,7 +234,7 @@ impl TableShow for ResourceInfo {
             contents.push(vec![]);
         }
 
-        Self::head().into_iter().zip(contents.into_iter()).collect()
+        Self::head().into_iter().zip(contents).collect()
     }
 }
 

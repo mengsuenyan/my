@@ -80,11 +80,8 @@ impl GitInfo {
         vec![
             self.name.clone(),
             format!("{}", self.path.display()),
-            self.url.as_ref().map(|s| s.clone()).unwrap_or_default(),
-            self.modified
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_default(),
+            self.url.as_ref().cloned().unwrap_or_default(),
+            self.modified.as_ref().cloned().unwrap_or_default(),
         ]
     }
 }
@@ -162,7 +159,7 @@ impl<'a> Iterator for GitResIter<'a, GitInfo> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct GitRes {
     info: Vec<GitInfo>,
 }
@@ -185,12 +182,9 @@ impl GitRes {
     pub fn merge(&mut self, other: &GitRes) {
         for info in other.iter() {
             if self.info.iter().any(|ele| ele.path == info.path) {
-                self.info
-                    .iter_mut()
-                    .find(|ele| ele.path == info.path)
-                    .map(|ele| {
-                        ele.update(info);
-                    });
+                if let Some(ele) = self.info.iter_mut().find(|ele| ele.path == info.path) {
+                    ele.update(info);
+                };
             } else {
                 self.info.push(info.clone());
             }
@@ -213,10 +207,10 @@ impl GitRes {
     }
 
     pub fn update_code_info(&mut self, path: &Path, code_info: CodeInfo) {
-        self.info.iter_mut().find(|i| i.path() == path).map(|i| {
+        if let Some(i) = self.info.iter_mut().find(|i| i.path() == path) {
             log::info!("update the `{}` code info", i.path().display());
             i.code_info = Some(code_info);
-        });
+        }
     }
 
     pub fn to_vec(&self) -> Vec<GitInfo> {
@@ -343,9 +337,9 @@ impl TableShow for GitRes {
     fn cols(&self) -> Vec<(String, Vec<String>)> {
         let mut res = (0..Self::COLS).map(|_| vec![]).collect::<Vec<_>>();
 
-        res.first_mut().map(|v| {
+        if let Some(v) = res.first_mut() {
             (0..self.info.len()).for_each(|idx| v.push(format!("{idx}")));
-        });
+        }
 
         for ele in self.info.iter() {
             res.iter_mut()
@@ -356,7 +350,7 @@ impl TableShow for GitRes {
                 });
         }
 
-        Self::head().into_iter().zip(res.into_iter()).collect()
+        Self::head().into_iter().zip(res).collect()
     }
 }
 
