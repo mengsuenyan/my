@@ -1,3 +1,9 @@
+[workspace]
+
+members = [
+    "crypto_hash",
+]
+
 [package]
 name = "my"
 version = "0.2.4"
