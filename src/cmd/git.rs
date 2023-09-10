@@ -263,6 +263,7 @@ impl GitCmd {
     }
 
     fn clone_cmd(&self, target_dir: PathBuf, urls: Vec<Url>, max_try: usize) -> GitRes {
+        let target_dir = target_dir.canonicalize().unwrap();
         let (mut git_res, mut urls, mut cnt) = (GitRes::new(), VecDeque::from(urls), 0);
 
         while let Some(url) = urls.pop_back() {
