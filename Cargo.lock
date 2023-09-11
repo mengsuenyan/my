@@ -124,6 +124,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cipher"
+version = "0.1.0"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "clap"
 version = "4.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

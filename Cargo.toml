@@ -2,6 +2,7 @@
 
 members = [
     "crypto_hash",
+    "cipher",
 ]
 
 [package]
