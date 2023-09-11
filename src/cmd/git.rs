@@ -3,6 +3,7 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use regex::Regex;
 use std::cell::Cell;
 use std::collections::VecDeque;
+use std::fmt::format;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::time::Duration;
@@ -288,12 +289,18 @@ impl GitCmd {
                     }
                 }
                 Err(e) => {
-                    log::error!("{e}");
-                    if cnt < max_try {
-                        urls.push_front(url);
-                    } else {
-                        log::warn!("{} clone trying times exceed {}", url, max_try);
+                    let e_str = format!("{e}");
+                    if e_str.contains("already exists") {
+                        log::warn!("{e}");
                         cnt = 0;
+                    } else {
+                        log::error!("{e_str}");
+                        if cnt < max_try {
+                            urls.push_front(url);
+                        } else {
+                            log::warn!("{} clone trying times exceed {}", url, max_try);
+                            cnt = 0;
+                        }
                     }
                 }
             }
