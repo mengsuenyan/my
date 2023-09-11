@@ -3,7 +3,6 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use regex::Regex;
 use std::cell::Cell;
 use std::collections::VecDeque;
-use std::fmt::format;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::time::Duration;
