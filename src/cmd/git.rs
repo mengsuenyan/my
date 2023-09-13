@@ -256,7 +256,9 @@ impl GitCmd {
                 }
             }
 
-            self.sleep();
+            if !infos.is_empty() {
+                self.sleep();
+            }
         }
 
         git_res
@@ -304,7 +306,9 @@ impl GitCmd {
                 }
             }
 
-            self.sleep();
+            if !urls.is_empty() {
+                self.sleep();
+            }
         }
 
         git_res
