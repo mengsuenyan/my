@@ -155,7 +155,7 @@ sha_common!(
     ]
 );
 
-/// `DIGEST_BYTES`指定消息摘要的字节数, 需要小于64. <pr>
+/// `DIGEST_BYTES`指定消息摘要的字节数, 需要小于64. <br>
 ///
 /// `SHA512T224`等价于`SHA512t<28>`, `SHA512T256`等价于`SHA512t<32>`, 但它们提供常量`new`方法.
 #[derive(Clone)]
