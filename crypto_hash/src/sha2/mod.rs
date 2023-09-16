@@ -1,4 +1,4 @@
-/// 实现标准: [FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)<pr>
+/// 实现标准: [FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)<br>
 ///
 ///
 use std::ops::{BitAnd, BitXor, Not};

@@ -1,15 +1,15 @@
-//! AES加密<pr>
-//! FIPS 197  <pr>
-//! [Blog](https://www.cnblogs.com/mengsuenyan/p/12697694.html)<pr>
-//! [FIPS 197-upd1](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)<pr>
-//! this src modified from golang source code.<pr>
+//! AES加密<br>
+//! FIPS 197  <br>
+//! [Blog](https://www.cnblogs.com/mengsuenyan/p/12697694.html)<br>
+//! [FIPS 197-upd1](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)<br>
+//! this src modified from golang source code.<br>
 
-/// AES is based on the mathematical behavior of binary polynomials<pr>
-/// (polynomials over GF(2)) modulo the irreducible polynomial x⁸ + x⁴ + x³ + x + 1.<pr>
-/// Addition of these binary polynomials corresponds to binary xor.<pr>
-/// Reducing mod poly corresponds to binary xor with poly every<pr>
-/// time a 0x100 bit appears.<pr>
-/// const poly = 1<<8 | 1<<4 | 1<<3 | 1<<1 | 1<<0 // x⁸ + x⁴ + x³ + x + 1<pr>
+/// AES is based on the mathematical behavior of binary polynomials<br>
+/// (polynomials over GF(2)) modulo the irreducible polynomial x⁸ + x⁴ + x³ + x + 1.<br>
+/// Addition of these binary polynomials corresponds to binary xor.<br>
+/// Reducing mod poly corresponds to binary xor with poly every<br>
+/// time a 0x100 bit appears.<br>
+/// const poly = 1<<8 | 1<<4 | 1<<3 | 1<<1 | 1<<0 // x⁸ + x⁴ + x³ + x + 1<br>
 #[derive(Clone)]
 pub struct AES;
 
