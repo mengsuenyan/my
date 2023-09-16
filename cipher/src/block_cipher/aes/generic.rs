@@ -1,5 +1,5 @@
 use super::AES;
-use crate::BlockCipher;
+use crate::{BlockCipher, BlockCipherWrapper};
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
@@ -10,7 +10,8 @@ macro_rules! impl_aes {
         $NR: literal
     ) => {
         pub struct $NAME {
-            key: [u32; Self::NK_EXPAND],
+            en_key: [u32; Self::NK_EXPAND],
+            de_key: [u32; Self::NK_EXPAND],
         }
 
         impl $NAME {
@@ -26,16 +27,14 @@ macro_rules! impl_aes {
             // 密钥派生(KEY Schedule)后的密钥字长度
             const NK_EXPAND: usize = (Self::NR + 1) << 2;
 
-            pub fn new(key: [u8; Self::KEY_BYTES], is_decrypt: bool) -> Self {
-                if is_decrypt {
-                    Self {
-                        key: Self::new_decrypt(Self::new_encrypt(key)),
-                    }
-                } else {
-                    Self {
-                        key: Self::new_encrypt(key),
-                    }
-                }
+            pub fn new(key: [u8; Self::KEY_BYTES]) -> Self {
+                let en_key = Self::new_encrypt(key);
+                let de_key = Self::new_decrypt(&en_key);
+                Self { en_key, de_key }
+            }
+
+            pub fn to_wrapper(self) -> BlockCipherWrapper<Self, { Self::BLOCK_SIZE }> {
+                BlockCipherWrapper::from(self)
             }
 
             // 密钥扩展
@@ -70,7 +69,7 @@ macro_rules! impl_aes {
                 key_expand
             }
 
-            fn new_decrypt(key: [u32; Self::NK_EXPAND]) -> [u32; Self::NK_EXPAND] {
+            fn new_decrypt(key: &[u32; Self::NK_EXPAND]) -> [u32; Self::NK_EXPAND] {
                 let mut key_expand = [0u32; Self::NK_EXPAND];
 
                 for i in (0..key_expand.len()).step_by(4) {
@@ -91,16 +90,10 @@ macro_rules! impl_aes {
                     }
                 }
 
-                #[cfg(feature = "sec-zeroize")]
-                {
-                    let mut key = key;
-                    key.zeroize();
-                }
-
                 key_expand
             }
 
-            pub(super) fn decrypt_block(
+            pub(super) fn decrypt_block_inner(
                 &self,
                 data: &[u8; Self::BLOCK_SIZE],
             ) -> [u8; Self::BLOCK_SIZE] {
@@ -109,7 +102,7 @@ macro_rules! impl_aes {
                     *b = unsafe { u32::from_be_bytes((chunk.as_ptr() as *const [u8; 4]).read()) };
                 }
 
-                let key = &self.key;
+                let key = &self.de_key;
                 // AddRoundKey
                 let (mut s0, mut s1, mut s2, mut s3) = (
                     block[0] ^ key[0],
@@ -220,7 +213,7 @@ macro_rules! impl_aes {
                 plaintext
             }
 
-            pub(super) fn crypt_block(
+            pub(super) fn encrypt_block_inner(
                 &self,
                 data: &[u8; Self::BLOCK_SIZE],
             ) -> [u8; Self::BLOCK_SIZE] {
@@ -229,7 +222,7 @@ macro_rules! impl_aes {
                     *b = unsafe { u32::from_be_bytes((chunk.as_ptr() as *const [u8; 4]).read()) };
                 }
 
-                let key = &self.key;
+                let key = &self.en_key;
                 // AddRoundKey
                 let (mut s0, mut s1, mut s2, mut s3) = (
                     block[0] ^ key[0],
@@ -344,7 +337,8 @@ macro_rules! impl_aes {
         #[cfg(feature = "sec-zeroize")]
         impl Zeroize for $NAME {
             fn zeroize(&mut self) {
-                self.key.zeroize();
+                self.en_key.zeroize();
+                self.de_key.zeroize();
             }
         }
     };

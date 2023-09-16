@@ -1,8 +1,7 @@
-
-use crate::{BlockCipher, block_cipher::AES};
+use crate::{block_cipher::AES, Decrypt, Encrypt};
 
 #[test]
-fn aes128() {
+fn aes() {
     let cases = [
         (
             // Appendix B.
@@ -38,8 +37,8 @@ fn aes128() {
 
     for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
         let mut buf = Vec::new();
-        let aes128 = AES::aes128(key.as_slice(), false).unwrap();
-        aes128.encrypt(&plaintxt, &mut buf).unwrap();
+        let aes = AES::aes128(key.as_slice()).unwrap().to_wrapper();
+        aes.encrypt(&plaintxt, &mut buf).unwrap();
         assert_eq!(
             buf.as_slice(),
             ciphertxt.as_ref(),
@@ -47,8 +46,8 @@ fn aes128() {
         );
 
         buf.clear();
-        let aes128 = AES::aes128(key.as_slice(), true).unwrap();
-        aes128.decrypt(&ciphertxt, &mut buf).unwrap();
+        let aes = AES::aes128(key.as_slice()).unwrap().to_wrapper();
+        aes.decrypt(&ciphertxt, &mut buf).unwrap();
         assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
     }
 }
@@ -73,8 +72,8 @@ fn aes192() {
 
     for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
         let mut buf = Vec::new();
-        let aes128 = AES::aes192(key.as_slice(), false).unwrap();
-        aes128.encrypt(&plaintxt, &mut buf).unwrap();
+        let aes = AES::aes192(key.as_slice()).unwrap().to_wrapper();
+        aes.encrypt(&plaintxt, &mut buf).unwrap();
         assert_eq!(
             buf.as_slice(),
             ciphertxt.as_ref(),
@@ -82,8 +81,8 @@ fn aes192() {
         );
 
         buf.clear();
-        let aes128 = AES::aes192(key.as_slice(), true).unwrap();
-        aes128.decrypt(&ciphertxt, &mut buf).unwrap();
+        let aes = AES::aes192(key.as_slice()).unwrap().to_wrapper();
+        aes.decrypt(&ciphertxt, &mut buf).unwrap();
         assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
     }
 }
@@ -109,8 +108,8 @@ fn aes256() {
 
     for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
         let mut buf = Vec::new();
-        let aes128 = AES::aes256(key.as_slice(), false).unwrap();
-        aes128.encrypt(&plaintxt, &mut buf).unwrap();
+        let aes = AES::aes256(key.as_slice()).unwrap().to_wrapper();
+        aes.encrypt(&plaintxt, &mut buf).unwrap();
         assert_eq!(
             buf.as_slice(),
             ciphertxt.as_ref(),
@@ -118,8 +117,8 @@ fn aes256() {
         );
 
         buf.clear();
-        let aes128 = AES::aes256(key.as_slice(), true).unwrap();
-        aes128.decrypt(&ciphertxt, &mut buf).unwrap();
+        let aes = AES::aes256(key.as_slice()).unwrap().to_wrapper();
+        aes.decrypt(&ciphertxt, &mut buf).unwrap();
         assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
     }
 }

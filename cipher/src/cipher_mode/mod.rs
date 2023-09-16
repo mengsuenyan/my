@@ -3,7 +3,7 @@
 //! [Block Cipher Techniques](https://csrc.nist.gov/Projects/block-cipher-techniques/BCM/current-modes)<br>
 //! [NIST 800-38A, Recommendation for Block Cipher Modes of operation Methods and Techniques](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf)<br>
 //! [NIST 800-38A-add, Three Variants of Ciphertext Stealing for CBC mode](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a-add.pdf)
-//! 
+//!
 //! 笔记: `分组加密工作模式.md` <br>
 //! <br>
 //! ## The Electronic Codebook Mode(ECB)
@@ -66,3 +66,11 @@
 //!
 //! 在CTR工作模式中, 如果每个$T_i$能提前计算出来, 那么加解密可以并行.
 //!
+
+pub trait BlockPadding<const BLOCK_SIZE: usize> {
+    fn padding(&self, data: &[u8], block: &mut Vec<u8>) {
+        block.clear();
+        block.extend(self.padding_block(data))
+    }
+    fn padding_block(&self, data: &[u8]) -> [u8; BLOCK_SIZE];
+}
