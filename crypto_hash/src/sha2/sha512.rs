@@ -231,7 +231,7 @@ impl<const DIGEST_BYTES: usize> Digest for SHA512t<DIGEST_BYTES> {
     }
 
     fn reset(&mut self) {
-        todo!()
+        *self = Self::new();
     }
 }
 
