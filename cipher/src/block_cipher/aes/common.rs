@@ -14,42 +14,51 @@ impl AES {
         ])
     }
 
-    pub fn aes128(key: &[u8], is_decrypt: bool) -> Result<AES128, CipherError> {
+    pub fn aes128(key: &[u8]) -> Result<AES128, CipherError> {
         if key.len() == AES128::KEY_BYTES {
             let key = unsafe {
                 let ptr = key.as_ptr() as *const [u8; AES128::KEY_BYTES];
                 ptr.read()
             };
 
-            Ok(AES128::new(key, is_decrypt))
+            Ok(AES128::new(key))
         } else {
-            Err(CipherError::InvalidKeySize { target: AES128::KEY_BYTES, real: key.len() })
+            Err(CipherError::InvalidKeySize {
+                target: AES128::KEY_BYTES,
+                real: key.len(),
+            })
         }
     }
 
-    pub fn aes192(key: &[u8], is_decrypt: bool) -> Result<AES192, CipherError> {
+    pub fn aes192(key: &[u8]) -> Result<AES192, CipherError> {
         if key.len() == AES192::KEY_BYTES {
             let key = unsafe {
                 let ptr = key.as_ptr() as *const [u8; AES192::KEY_BYTES];
                 ptr.read()
             };
 
-            Ok(AES192::new(key, is_decrypt))
+            Ok(AES192::new(key))
         } else {
-            Err(CipherError::InvalidKeySize { target: AES128::KEY_BYTES, real: key.len() })
+            Err(CipherError::InvalidKeySize {
+                target: AES128::KEY_BYTES,
+                real: key.len(),
+            })
         }
     }
 
-    pub fn aes256(key: &[u8], is_decrypt: bool) -> Result<AES256, CipherError> {
+    pub fn aes256(key: &[u8]) -> Result<AES256, CipherError> {
         if key.len() == AES256::KEY_BYTES {
             let key = unsafe {
                 let ptr = key.as_ptr() as *const [u8; AES256::KEY_BYTES];
                 ptr.read()
             };
 
-            Ok(AES256::new(key, is_decrypt))
+            Ok(AES256::new(key))
         } else {
-            Err(CipherError::InvalidKeySize { target: AES128::KEY_BYTES, real: key.len() })
+            Err(CipherError::InvalidKeySize {
+                target: AES128::KEY_BYTES,
+                real: key.len(),
+            })
         }
     }
 }

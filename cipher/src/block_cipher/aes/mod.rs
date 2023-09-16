@@ -21,47 +21,30 @@ pub use generic::{AES128, AES192, AES256};
 #[cfg(test)]
 mod tests;
 
-use crate::BlockCipher;
-use crate::CipherError;
+use crate::{BlockCipherWrapper, BlockDecrypt, BlockEncrypt};
 
-macro_rules! impl_block_ciper {
+macro_rules! impl_block_cipher {
     ($NAME: ident) => {
-        impl BlockCipher for $NAME {
-            type Err = CipherError;
-
-            const BLOCK_SIZE: usize = 16;
-
-            fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), Self::Err> {
-                if plaintext.len() == Self::BLOCK_SIZE {
-                    let data = unsafe { &*(plaintext.as_ptr() as *const [u8; Self::BLOCK_SIZE]) };
-
-                    ciphertext.extend(self.crypt_block(data));
-                    Ok(())
-                } else {
-                    Err(CipherError::InvalidBlockSize {
-                        target: Self::BLOCK_SIZE,
-                        real: plaintext.len(),
-                    })
-                }
+        impl BlockEncrypt<16> for $NAME {
+            fn encrypt_block(&self, plaintext: &[u8; 16]) -> [u8; 16] {
+                self.encrypt_block_inner(plaintext)
             }
+        }
 
-            fn decrypt(&self, ciphertext: &[u8], plaintext: &mut Vec<u8>) -> Result<(), Self::Err> {
-                if ciphertext.len() == Self::BLOCK_SIZE {
-                    let data = unsafe { &*(ciphertext.as_ptr() as *const [u8; Self::BLOCK_SIZE]) };
-                    plaintext.extend(self.decrypt_block(data));
+        impl BlockDecrypt<16> for $NAME {
+            fn decrypt_block(&self, ciphertext: &[u8; 16]) -> [u8; 16] {
+                self.decrypt_block_inner(ciphertext)
+            }
+        }
 
-                    Ok(())
-                } else {
-                    Err(CipherError::InvalidBlockSize {
-                        target: Self::BLOCK_SIZE,
-                        real: plaintext.len(),
-                    })
-                }
+        impl From<$NAME> for BlockCipherWrapper<$NAME, 16> {
+            fn from(value: $NAME) -> Self {
+                Self::new(value)
             }
         }
     };
 }
 
-impl_block_ciper!(AES128);
-impl_block_ciper!(AES192);
-impl_block_ciper!(AES256);
+impl_block_cipher!(AES128);
+impl_block_cipher!(AES192);
+impl_block_cipher!(AES256);

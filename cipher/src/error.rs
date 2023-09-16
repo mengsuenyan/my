@@ -15,9 +15,9 @@ impl Display for CipherError {
             Self::InvalidBlockSize { target, real } => f.write_fmt(format_args!(
                 "Invalid block data size `{real}` not match to target size `{target}`"
             )),
-            CipherError::InvalidKeySize { target, real } => {
-                f.write_fmt(format_args!("Invalid key size `{real}` not match to target size `{target}`"))
-            },
+            CipherError::InvalidKeySize { target, real } => f.write_fmt(format_args!(
+                "Invalid key size `{real}` not match to target size `{target}`"
+            )),
         }
     }
 }
