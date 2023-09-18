@@ -276,21 +276,23 @@ where
                 data = &data[N..];
             }
 
-            if !data.is_empty() {
-                return Err(CipherError::InvalidBlockSize {
+            let len = data.len();
+            if len > 0 {
+                sf.clear_resource();
+                Err(CipherError::InvalidBlockSize {
                     target: N,
-                    real: data.len(),
-                });
+                    real: len,
+                })
+            } else {
+                sf.padding.unpadding(&mut sf.out_buf)?;
+
+                let s = sf.out_buf.len();
+                outdata
+                    .write_all(sf.out_buf.as_slice())
+                    .map_err(CipherError::from)?;
+                sf.clear_resource();
+                Ok(s)
             }
-
-            sf.padding.unpadding(&mut sf.out_buf)?;
-
-            let s = sf.out_buf.len();
-            outdata
-                .write_all(sf.out_buf.as_slice())
-                .map_err(CipherError::from)?;
-            sf.clear_resource();
-            Ok(s)
         });
 
         Ok(s)

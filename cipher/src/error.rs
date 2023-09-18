@@ -24,6 +24,8 @@ pub enum CipherError {
 
     /// 未设置初始化向量
     NotSetInitialVec,
+
+    Other(String),
 }
 
 impl Display for CipherError {
@@ -49,6 +51,7 @@ impl Display for CipherError {
                 if *is_encrypt { "encrypt" } else { "decrypt" }
             )),
             CipherError::NotSetInitialVec => f.write_str("Not set initial vector"),
+            CipherError::Other(other) => f.write_str(other.as_str()),
         }
     }
 }
