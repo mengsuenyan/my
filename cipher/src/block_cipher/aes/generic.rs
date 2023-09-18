@@ -1,5 +1,6 @@
 use super::AES;
-use crate::{BlockCipher, BlockCipherWrapper};
+use crate::BlockCipher;
+use utils::Block;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
@@ -9,6 +10,7 @@ macro_rules! impl_aes {
         $KEY_BITS: literal,
         $NR: literal
     ) => {
+        #[derive(Clone)]
         pub struct $NAME {
             en_key: [u32; Self::NK_EXPAND],
             de_key: [u32; Self::NK_EXPAND],
@@ -33,19 +35,12 @@ macro_rules! impl_aes {
                 Self { en_key, de_key }
             }
 
-            pub fn to_wrapper(self) -> BlockCipherWrapper<Self, { Self::BLOCK_SIZE }> {
-                BlockCipherWrapper::from(self)
-            }
-
             // 密钥扩展
             fn new_encrypt(key: [u8; Self::KEY_BYTES]) -> [u32; Self::NK_EXPAND] {
                 let mut key_expand = [0u32; Self::NK_EXPAND];
 
                 for (k, chunk) in key_expand.iter_mut().zip(key.chunks_exact(4)) {
-                    *k = unsafe {
-                        let ptr = chunk.as_ptr() as *const [u8; 4];
-                        u32::from_be_bytes(ptr.read())
-                    };
+                    *k = u32::from_be_bytes(Block::to_arr_uncheck(chunk));
                 }
 
                 for i in Self::NK..Self::NK_EXPAND {
@@ -99,7 +94,7 @@ macro_rules! impl_aes {
             ) -> [u8; Self::BLOCK_SIZE] {
                 let mut block = [0u32; Self::BLOCK_SIZE / 4];
                 for (b, chunk) in block.iter_mut().zip(data.chunks_exact(4)) {
-                    *b = unsafe { u32::from_be_bytes((chunk.as_ptr() as *const [u8; 4]).read()) };
+                    *b = u32::from_be_bytes(Block::to_arr_uncheck(chunk));
                 }
 
                 let key = &self.de_key;
@@ -219,7 +214,7 @@ macro_rules! impl_aes {
             ) -> [u8; Self::BLOCK_SIZE] {
                 let mut block = [0u32; Self::BLOCK_SIZE / 4];
                 for (b, chunk) in block.iter_mut().zip(data.chunks_exact(4)) {
-                    *b = unsafe { u32::from_be_bytes((chunk.as_ptr() as *const [u8; 4]).read()) };
+                    *b = u32::from_be_bytes(Block::to_arr_uncheck(chunk));
                 }
 
                 let key = &self.en_key;

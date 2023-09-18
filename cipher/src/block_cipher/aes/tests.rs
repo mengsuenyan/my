@@ -1,5 +1,30 @@
 use crate::{block_cipher::AES, Decrypt, Encrypt};
 
+macro_rules! impl_aes_test {
+    ($CASES: ident) => {
+        for (i, (key, plaintxt, ciphertxt)) in $CASES.into_iter().enumerate() {
+            let mut buf = Vec::new();
+            let aes = AES::new(key.as_slice()).unwrap();
+            aes.encrypt(&plaintxt, &mut buf).unwrap();
+            assert_eq!(
+                buf.as_slice(),
+                ciphertxt.as_ref(),
+                "case {} encrypt failed",
+                i
+            );
+
+            buf.clear();
+            aes.decrypt(&ciphertxt, &mut buf).unwrap();
+            assert_eq!(
+                buf.as_slice(),
+                plaintxt.as_ref(),
+                "case {} decrypt failed",
+                i
+            );
+        }
+    };
+}
+
 #[test]
 fn aes() {
     let cases = [
@@ -35,21 +60,7 @@ fn aes() {
         ),
     ];
 
-    for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
-        let mut buf = Vec::new();
-        let aes = AES::aes128(key.as_slice()).unwrap().to_wrapper();
-        aes.encrypt(&plaintxt, &mut buf).unwrap();
-        assert_eq!(
-            buf.as_slice(),
-            ciphertxt.as_ref(),
-            "case {i} encrypt failed"
-        );
-
-        buf.clear();
-        let aes = AES::aes128(key.as_slice()).unwrap().to_wrapper();
-        aes.decrypt(&ciphertxt, &mut buf).unwrap();
-        assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
-    }
+    impl_aes_test!(cases);
 }
 
 #[test]
@@ -70,21 +81,7 @@ fn aes192() {
         ],
     )];
 
-    for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
-        let mut buf = Vec::new();
-        let aes = AES::aes192(key.as_slice()).unwrap().to_wrapper();
-        aes.encrypt(&plaintxt, &mut buf).unwrap();
-        assert_eq!(
-            buf.as_slice(),
-            ciphertxt.as_ref(),
-            "case {i} encrypt failed"
-        );
-
-        buf.clear();
-        let aes = AES::aes192(key.as_slice()).unwrap().to_wrapper();
-        aes.decrypt(&ciphertxt, &mut buf).unwrap();
-        assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
-    }
+    impl_aes_test!(cases);
 }
 
 #[test]
@@ -106,19 +103,5 @@ fn aes256() {
         ],
     )];
 
-    for (i, (key, plaintxt, ciphertxt)) in cases.into_iter().enumerate() {
-        let mut buf = Vec::new();
-        let aes = AES::aes256(key.as_slice()).unwrap().to_wrapper();
-        aes.encrypt(&plaintxt, &mut buf).unwrap();
-        assert_eq!(
-            buf.as_slice(),
-            ciphertxt.as_ref(),
-            "case {i} encrypt failed"
-        );
-
-        buf.clear();
-        let aes = AES::aes256(key.as_slice()).unwrap().to_wrapper();
-        aes.decrypt(&ciphertxt, &mut buf).unwrap();
-        assert_eq!(buf.as_slice(), plaintxt.as_ref(), "case {i} decrypt failed");
-    }
+    impl_aes_test!(cases);
 }

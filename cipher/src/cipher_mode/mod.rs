@@ -67,10 +67,8 @@
 //! 在CTR工作模式中, 如果每个$T_i$能提前计算出来, 那么加解密可以并行.
 //!
 
-pub trait BlockPadding<const BLOCK_SIZE: usize> {
-    fn padding(&self, data: &[u8], block: &mut Vec<u8>) {
-        block.clear();
-        block.extend(self.padding_block(data))
-    }
-    fn padding_block(&self, data: &[u8]) -> [u8; BLOCK_SIZE];
-}
+mod padding;
+pub use padding::{BlockPadding, DefaultPadding, EmptyPadding};
+
+mod ecb;
+pub use ecb::ECB;
