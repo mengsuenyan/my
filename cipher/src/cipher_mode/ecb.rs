@@ -4,6 +4,8 @@ use crate::stream_cipher::StreamCipherFinish;
 use crate::{BlockCipher, BlockDecrypt, BlockEncrypt, CipherError, StreamDecrypt, StreamEncrypt};
 use std::io::{Read, Write};
 use utils::Block;
+#[cfg(feature = "sec-zeroize")]
+use zeroize::Zeroize;
 
 /// Electronic Codebook Mode <br>
 ///
@@ -78,6 +80,15 @@ where
 
     pub fn set_padding(&mut self, padding: P) {
         self.padding = padding;
+    }
+}
+
+#[cfg(feature = "sec-zeroize")]
+impl<P, E, const N: usize> Zeroize for ECB<P, E, N>
+where E: Zeroize {
+    fn zeroize(&mut self) {
+        self.cipher.zeroize();
+        self.data.zeroize();
     }
 }
 
