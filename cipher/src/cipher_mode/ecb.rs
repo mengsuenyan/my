@@ -20,42 +20,17 @@ pub struct ECB<P, E, const BLOCK_SIZE: usize> {
     is_encrypt: Option<bool>,
 }
 
-macro_rules! def_type_ecb {
-    ([$NAME:ident, $TY: ty]) => {
-        pub type $NAME<P> = ECB<P, $TY, {<$TY>::BLOCK_SIZE}>;
-    };
-    ([$NAME1: ident, $TY1: ty], $([$NAME2: ident, $TY2: ty]),+) => {
-        def_type_ecb!([$NAME1, $TY1]);
-        def_type_ecb!($([$NAME2, $TY2]),+);
-    }
-}
-
-def_type_ecb!(
+def_type_block_cipher!(
+    ECB,
     [AESEcb, AES],
     [AES128Ecb, AES128],
     [AES192Ecb, AES192],
     [AES256Ecb, AES256]
 );
 
-impl<P, E, const N: usize> ECB<P, E, N> {
-    fn set_working_flag(&mut self, is_encrypt: bool) -> Result<(), CipherError> {
-        match self.is_encrypt {
-            None => {
-                self.data.clear();
-                self.out_buf.clear();
-                self.is_encrypt = Some(is_encrypt);
-                Ok(())
-            }
-            Some(b) => {
-                if b != is_encrypt {
-                    Err(CipherError::BeWorking(b))
-                } else {
-                    Ok(())
-                }
-            }
-        }
-    }
+impl_set_working_flag!(ECB);
 
+impl<P, E, const N: usize> ECB<P, E, N> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
@@ -65,7 +40,6 @@ impl<P, E, const N: usize> ECB<P, E, N> {
 
 impl<P, E, const BLOCK_SIZE: usize> ECB<P, E, BLOCK_SIZE>
 where
-    E: BlockCipher<BLOCK_SIZE>,
     P: BlockPadding,
 {
     pub fn new(cipher: E) -> Self {
@@ -229,6 +203,10 @@ where
                 data = &data[N..];
             }
 
+            if !data.is_empty() {
+                self.data.extend(data);
+            }
+
             if s == 0 {
                 break;
             }
@@ -297,11 +275,13 @@ mod tests {
                 ],
                 vec![
                     0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0,
-                    0x37, 0x07, 0x34,
+                    0x37, 0x07, 0x34, 0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d,
+                    0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
                 ],
                 vec![
                     0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19,
-                    0x6a, 0x0b, 0x32,
+                    0x6a, 0x0b, 0x32, 0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e,
+                    0xca, 0xf3, 0x24, 0x66, 0xef, 0x97,
                 ],
             ),
             (

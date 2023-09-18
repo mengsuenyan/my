@@ -11,6 +11,7 @@ pub mod stream_cipher;
 pub use stream_cipher::{StreamCipher, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
 
 pub mod cipher_mode;
+pub use cipher_mode::BlockPadding;
 
 pub trait Encrypt {
     // 写入ciphertext之前不清空
