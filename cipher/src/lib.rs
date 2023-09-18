@@ -1,6 +1,9 @@
 mod error;
 pub use error::CipherError;
 
+pub mod rand;
+pub use rand::Rand;
+
 pub mod block_cipher;
 pub use block_cipher::{BlockCipher, BlockDecrypt, BlockEncrypt};
 
