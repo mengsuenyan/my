@@ -85,7 +85,9 @@ where
 
 #[cfg(feature = "sec-zeroize")]
 impl<P, E, const N: usize> Zeroize for ECB<P, E, N>
-where E: Zeroize {
+where
+    E: Zeroize,
+{
     fn zeroize(&mut self) {
         self.cipher.zeroize();
         self.data.zeroize();
