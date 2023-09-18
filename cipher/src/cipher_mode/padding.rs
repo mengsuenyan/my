@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use crate::{BlockCipher, CipherError};
+use std::cmp::Ordering;
 
 pub trait BlockPadding {
     /// 填充到`padding_len`字节长度
