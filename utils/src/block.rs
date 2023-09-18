@@ -119,7 +119,7 @@ impl From<&[u8]> for Block {
 
 impl From<Vec<u8>> for Block {
     fn from(value: Vec<u8>) -> Self {
-        Self {data: value}
+        Self { data: value }
     }
 }
 

@@ -33,7 +33,7 @@
 //! 记有初始向量IV(IV可以不保密, 但是**它必须是不可预测的(unpredictable)**.), b是分组加密函数的分组位大小, s是给定的整数参数满足$1 \le s \le b$. <br>
 //!
 //! $$
-//! I_1 = IV; I_j = LSB_{b-s}(I_{j-1} | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; C'_j = P'_j \xor MSB_{s}(O_j), j = 1...n;
+//! I_1 = IV; I_j = LSB_{b-s}(I_{j-1}) | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; C'_j = P'_j \xor MSB_{s}(O_j), j = 1...n;
 //!
 //! I_1 = IV; I_j = LSB_{b-s}(I_{j-1}) | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; P'_j = C'_j \xor MSB_{s}(O_j), j = 1...n;
 //! $$
@@ -109,3 +109,6 @@ pub use ecb::{AES128Ecb, AES192Ecb, AES256Ecb, AESEcb, ECB};
 
 mod cbc;
 pub use cbc::{AES128Cbc, AES192Cbc, AES256Cbc, AESCbc, CBC};
+
+mod cfb;
+pub use cfb::{AES128Cfb, AES192Cfb, AES256Cfb, AESCfb, CFB};
