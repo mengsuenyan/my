@@ -1,12 +1,26 @@
 use std::{error::Error, fmt::Display};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum CipherError {
     /// 不合法分组大小
-    InvalidBlockSize { target: usize, real: usize },
+    InvalidBlockSize {
+        target: usize,
+        real: usize,
+    },
 
     /// 不合法的密钥长度
-    InvalidKeySize { target: usize, real: usize },
+    InvalidKeySize {
+        target: Option<usize>,
+        real: usize,
+    },
+
+    IOError(std::io::Error),
+
+    /// 解填充错误
+    UnpaddingNotMatch(String),
+
+    /// 正处于加密或解密过程中, ture加密中, false解密中
+    BeWorking(bool),
 }
 
 impl Display for CipherError {
@@ -15,11 +29,30 @@ impl Display for CipherError {
             Self::InvalidBlockSize { target, real } => f.write_fmt(format_args!(
                 "Invalid block data size `{real}` not match to target size `{target}`"
             )),
-            CipherError::InvalidKeySize { target, real } => f.write_fmt(format_args!(
-                "Invalid key size `{real}` not match to target size `{target}`"
+            CipherError::InvalidKeySize { target, real } => match target {
+                Some(target) => f.write_fmt(format_args!(
+                    "Invalid key size `{real}` not match to target size `{target}`"
+                )),
+                None => f.write_fmt(format_args!(
+                    "Invalid key size '{real}' not match to all target size"
+                )),
+            },
+            CipherError::IOError(io_err) => f.write_fmt(format_args!("{}", io_err)),
+            CipherError::UnpaddingNotMatch(name) => {
+                f.write_fmt(format_args!("unpadding failed by the `{name}`"))
+            }
+            CipherError::BeWorking(is_encrypt) => f.write_fmt(format_args!(
+                "Currently during in the `{}` process",
+                if *is_encrypt { "encrypt" } else { "decrypt" }
             )),
         }
     }
 }
 
 impl Error for CipherError {}
+
+impl From<std::io::Error> for CipherError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IOError(value)
+    }
+}

@@ -1,3 +1,4 @@
+use utils::Block;
 sha_common!(
     SHA512,
     u64,
@@ -176,10 +177,7 @@ impl<const DIGEST_BYTES: usize> SHA512t<DIGEST_BYTES> {
 
         let mut init = [0u64; 8];
         for (w, chunk) in init.iter_mut().zip(digest.as_ref().chunks_exact(8)) {
-            *w = unsafe {
-                let ptr = chunk.as_ptr() as *const [u8; 8];
-                u64::from_be_bytes(ptr.read())
-            };
+            *w = u64::from_be_bytes(Block::to_arr_uncheck(chunk));
         }
 
         Self {

@@ -1,4 +1,5 @@
 use crate::sha2::{f_ch, f_maj, SHA512};
+use utils::Block;
 
 impl SHA512 {
     #[inline]
@@ -25,10 +26,7 @@ impl SHA512 {
         for chunk in blocks.chunks_exact(SHA512::BLOCK_SIZE) {
             let mut words = [0u64; 80];
             for (word, bytes) in words.iter_mut().zip(chunk.chunks_exact(8)) {
-                *word = unsafe {
-                    let ptr = bytes.as_ptr() as *const [u8; 8];
-                    u64::from_be_bytes(ptr.read())
-                };
+                *word = u64::from_be_bytes(Block::to_arr_uncheck(bytes));
             }
 
             (SHA512::WORD_NUMS..words.len()).for_each(|j| {

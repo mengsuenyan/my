@@ -1,4 +1,5 @@
 use crate::sha2::{f_ch, f_maj, SHA256};
+use utils::Block;
 
 impl SHA256 {
     #[inline]
@@ -25,10 +26,7 @@ impl SHA256 {
         for chunk in blocks.chunks_exact(SHA256::BLOCK_SIZE) {
             let mut words = [0u32; 64];
             for (word, bytes) in words.iter_mut().zip(chunk.chunks_exact(4)) {
-                *word = unsafe {
-                    let ptr = bytes.as_ptr() as *const [u8; 4];
-                    u32::from_be_bytes(ptr.read())
-                };
+                *word = u32::from_be_bytes(Block::to_arr_uncheck(bytes));
             }
 
             (SHA256::WORD_NUMS..words.len()).for_each(|j| {

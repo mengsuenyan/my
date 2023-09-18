@@ -2,6 +2,7 @@ use crate::{
     sha2::{f_ch, f_maj, f_parity, SHA1},
     Digest,
 };
+use utils::Block;
 
 macro_rules! sha1_upd_digest {
     ($a: ident, $b: ident, $c: ident, $d: ident, $e: ident, $A: ident, $B: ident, $C: ident, $D: ident, $E: ident) => {{
@@ -29,10 +30,7 @@ impl SHA1 {
         for chunk in blocks.chunks_exact(SHA1::BLOCK_SIZE) {
             let mut words = [0u32; SHA1::WORD_NUMS];
             for (word, bytes) in words.iter_mut().zip(chunk.chunks_exact(4)) {
-                *word = unsafe {
-                    let ptr = bytes.as_ptr() as *const [u8; 4];
-                    u32::from_be_bytes(ptr.read())
-                };
+                *word = u32::from_be_bytes(Block::to_arr_uncheck(bytes));
             }
 
             let (mut a, mut b, mut c, mut d, mut e) =
