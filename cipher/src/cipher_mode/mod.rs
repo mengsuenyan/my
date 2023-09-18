@@ -71,4 +71,4 @@ mod padding;
 pub use padding::{BlockPadding, DefaultPadding, EmptyPadding};
 
 mod ecb;
-pub use ecb::ECB;
+pub use ecb::{AES128Ecb, AES192Ecb, AES256Ecb, AESEcb, ECB};

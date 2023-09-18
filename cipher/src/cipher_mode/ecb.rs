@@ -1,10 +1,13 @@
+use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::BlockPadding;
 use crate::stream_cipher::StreamCipherFinish;
 use crate::{BlockCipher, BlockDecrypt, BlockEncrypt, CipherError, StreamDecrypt, StreamEncrypt};
 use std::io::{Read, Write};
 use utils::Block;
 
-/// Electronic Codebook Mode
+/// Electronic Codebook Mode <br>
+///
+/// `ECB<Padding, BlockCipher, BLOCK_SIZE>`
 pub struct ECB<P, E, const BLOCK_SIZE: usize> {
     //缓存输入数据
     data: Block,
@@ -14,6 +17,23 @@ pub struct ECB<P, E, const BLOCK_SIZE: usize> {
     padding: P,
     is_encrypt: Option<bool>,
 }
+
+macro_rules! def_type_ecb {
+    ([$NAME:ident, $TY: ty]) => {
+        pub type $NAME<P> = ECB<P, $TY, {<$TY>::BLOCK_SIZE}>;
+    };
+    ([$NAME1: ident, $TY1: ty], $([$NAME2: ident, $TY2: ty]),+) => {
+        def_type_ecb!([$NAME1, $TY1]);
+        def_type_ecb!($([$NAME2, $TY2]),+);
+    }
+}
+
+def_type_ecb!(
+    [AESEcb, AES],
+    [AES128Ecb, AES128],
+    [AES192Ecb, AES192],
+    [AES256Ecb, AES256]
+);
 
 impl<P, E, const N: usize> ECB<P, E, N> {
     fn set_working_flag(&mut self, is_encrypt: bool) -> Result<(), CipherError> {
@@ -250,7 +270,7 @@ where
 mod tests {
     use super::{StreamDecrypt, StreamEncrypt};
     use crate::block_cipher::{BlockCipher, AES};
-    use crate::cipher_mode::{BlockPadding, DefaultPadding, EmptyPadding, ECB};
+    use crate::cipher_mode::{AESEcb, BlockPadding, DefaultPadding, EmptyPadding};
     use crate::{Decrypt, Encrypt};
     use std::cell::RefCell;
 
@@ -327,7 +347,8 @@ mod tests {
             let mut data = plaintext.as_slice();
             let cipher = AES::new(key.as_slice()).unwrap();
 
-            let mut ecb = ECB::<EmptyPadding, AES, { AES::BLOCK_SIZE }>::new(cipher);
+            // let mut ecb = ECB::<EmptyPadding, AES, { AES::BLOCK_SIZE }>::new(cipher);
+            let mut ecb = AESEcb::<EmptyPadding>::new(cipher);
 
             let mut buf = Vec::with_capacity(ciphertext.len());
             let (in_len, out_len) = ecb
@@ -403,7 +424,7 @@ mod tests {
                 AES::new(key.as_slice()).unwrap(),
                 DefaultPadding::new(AES::BLOCK_SIZE),
             );
-            let ecb = ECB::<DefaultPadding, AES, { AES::BLOCK_SIZE }>::new(aes.clone());
+            let ecb = AESEcb::<DefaultPadding>::new(aes.clone());
             let ecb: RefCell<_> = ecb.into();
             let mut aes_data = plaintext.clone();
             padding.padding(&mut aes_data);
