@@ -117,6 +117,12 @@ impl From<&[u8]> for Block {
     }
 }
 
+impl From<Vec<u8>> for Block {
+    fn from(value: Vec<u8>) -> Self {
+        Self {data: value}
+    }
+}
+
 impl<A> Extend<A> for Block
 where
     Vec<u8>: Extend<A>,

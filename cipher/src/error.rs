@@ -21,6 +21,9 @@ pub enum CipherError {
 
     /// 正处于加密或解密过程中, ture加密中, false解密中
     BeWorking(bool),
+
+    /// 未设置初始化向量
+    NotSetInitialVec,
 }
 
 impl Display for CipherError {
@@ -45,6 +48,7 @@ impl Display for CipherError {
                 "Currently during in the `{}` process",
                 if *is_encrypt { "encrypt" } else { "decrypt" }
             )),
+            CipherError::NotSetInitialVec => f.write_str("Not set initial vector"),
         }
     }
 }
