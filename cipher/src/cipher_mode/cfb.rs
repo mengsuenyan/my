@@ -50,6 +50,7 @@ impl<P, E, const N: usize> CFB<P, E, N> {
         }
     }
 }
+
 impl<P, E, const N: usize> CFB<P, E, N>
 where
     P: BlockPadding,

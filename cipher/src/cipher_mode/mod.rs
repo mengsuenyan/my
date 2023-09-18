@@ -95,10 +95,17 @@ macro_rules! def_type_block_cipher {
     ($MODE: ident, [$NAME:ident, $TY: ty]) => {
         pub type $NAME<P> = $MODE<P, $TY, {<$TY>::BLOCK_SIZE}>;
     };
+    ($MODE: ident, <$NAME:ident, $TY: ty>) => {
+        pub type $NAME = $MODE<$TY, {<$TY>::BLOCK_SIZE}>;
+    };
     ($MODE: ident, [$NAME1: ident, $TY1: ty], $([$NAME2: ident, $TY2: ty]),+) => {
         def_type_block_cipher!($MODE, [$NAME1, $TY1]);
         def_type_block_cipher!($MODE, $([$NAME2, $TY2]),+);
-    }
+    };
+    ($MODE: ident, <$NAME1: ident, $TY1: ty>, $(<$NAME2: ident, $TY2: ty>),+) => {
+        def_type_block_cipher!($MODE, <$NAME1, $TY1>);
+        def_type_block_cipher!($MODE, $(<$NAME2, $TY2>),+);
+    };
 }
 
 mod padding;
@@ -112,3 +119,6 @@ pub use cbc::{AES128Cbc, AES192Cbc, AES256Cbc, AESCbc, CBC};
 
 mod cfb;
 pub use cfb::{AES128Cfb, AES192Cfb, AES256Cfb, AESCfb, CFB};
+
+mod ofb;
+pub use ofb::{AES128Ofb, AES192Ofb, AES256Ofb, AESOfb, OFB};
