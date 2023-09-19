@@ -93,7 +93,7 @@ macro_rules! impl_set_working_flag {
 
 macro_rules! def_type_block_cipher {
     ($MODE: ident, [$NAME:ident, $TY: ty]) => {
-        pub type $NAME<P> = $MODE<P, $TY, {<$TY>::BLOCK_SIZE}>;
+        pub type $NAME<T> = $MODE<T, $TY, {<$TY>::BLOCK_SIZE}>;
     };
     ($MODE: ident, <$NAME:ident, $TY: ty>) => {
         pub type $NAME = $MODE<$TY, {<$TY>::BLOCK_SIZE}>;
@@ -122,3 +122,9 @@ pub use cfb::{AES128Cfb, AES192Cfb, AES256Cfb, AESCfb, CFB};
 
 mod ofb;
 pub use ofb::{AES128Ofb, AES192Ofb, AES256Ofb, AESOfb, OFB};
+
+mod counter;
+pub use counter::{Counter, DefaultCounter};
+
+mod ctr;
+pub use ctr::{AES128Ctr, AES192Ctr, AES256Ctr, AESCtr, CTR};

@@ -17,6 +17,7 @@ impl<T> BlockPadding for Box<T>
 where
     T: BlockPadding,
 {
+    /// 对齐到`padding_len`字节长度
     fn new(padding_len: usize) -> Self {
         Box::new(T::new(padding_len))
     }

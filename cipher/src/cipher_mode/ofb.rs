@@ -3,6 +3,8 @@ use crate::{
     BlockCipher, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt,
 };
 use std::io::{Read, Write};
+#[cfg(feature = "sec-zeroize")]
+use zeroize::Zeroize;
 
 /// The Output Feedback Mode(OFB) <br>
 ///
@@ -92,16 +94,26 @@ where
     }
 }
 
-impl<E, const N: usize> StreamEncrypt for OFB<E, N>
+#[cfg(feature = "sec-zeroize")]
+impl<E: Zeroize, const N: usize> Zeroize for OFB<E, N> {
+    fn zeroize(&mut self) {
+        self.data.zeroize();
+        self.cipher.zeroize();
+        self.iv.zeroize();
+    }
+}
+
+impl<E, const N: usize> OFB<E, N>
 where
     E: BlockEncrypt<N>,
 {
-    fn stream_encrypt<'a, R: Read, W: Write>(
+    fn stream_inner<'a, R: Read, W: Write>(
         &'a mut self,
         in_data: &'a mut R,
         out_data: &mut W,
+        is_encrypt: bool,
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
-        self.set_working_flag(true)?;
+        self.set_working_flag(is_encrypt)?;
         self.check_iv()?;
         let mut out_len = 0;
 
@@ -146,7 +158,9 @@ where
             if !sf.data.is_empty() {
                 let d =
                     Self::encrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), sf.data.as_slice());
-                outdata.write_all(d.as_slice()).map_err(CipherError::from)?;
+                outdata
+                    .write_all(&d.as_slice()[..sf.data.len()])
+                    .map_err(CipherError::from)?;
                 s += sf.data.len();
             }
 
@@ -155,6 +169,19 @@ where
         });
 
         Ok(s)
+    }
+}
+
+impl<E, const N: usize> StreamEncrypt for OFB<E, N>
+where
+    E: BlockEncrypt<N>,
+{
+    fn stream_encrypt<'a, R: Read, W: Write>(
+        &'a mut self,
+        in_data: &'a mut R,
+        out_data: &mut W,
+    ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
+        self.stream_inner(in_data, out_data, true)
     }
 }
 
@@ -167,60 +194,7 @@ where
         in_data: &'a mut R,
         out_data: &mut W,
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
-        self.set_working_flag(false)?;
-        self.check_iv()?;
-        let mut out_len = 0;
-
-        let mut buf = Vec::with_capacity(1024);
-        let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut data = buf.as_slice();
-
-        if !self.data.is_empty() {
-            let l = (N - self.data.len()).min(data.len());
-            self.data.extend(&data[..l]);
-            data = &data[l..];
-        }
-
-        if self.data.len() == N {
-            let d = Self::encrypt_inner(
-                &self.cipher,
-                self.iv.as_mut().unwrap(),
-                self.data.as_slice(),
-            );
-            out_data
-                .write_all(d.as_slice())
-                .map_err(CipherError::from)?;
-            out_len += N;
-            self.data.clear();
-        }
-
-        while data.len() >= N {
-            let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), &data[..N]);
-            out_data
-                .write_all(d.as_slice())
-                .map_err(CipherError::from)?;
-            out_len += N;
-            data = &data[N..];
-        }
-
-        if !data.is_empty() {
-            self.data.extend(data);
-        }
-
-        let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
-            let mut s = 0;
-            if !sf.data.is_empty() {
-                let d =
-                    Self::encrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), sf.data.as_slice());
-                outdata.write_all(d.as_slice()).map_err(CipherError::from)?;
-                s += sf.data.len();
-            }
-
-            sf.clear_resource();
-            Ok(s)
-        });
-
-        Ok(s)
+        self.stream_inner(in_data, out_data, false)
     }
 }
 
