@@ -1,3 +1,18 @@
+//! ## The Cipher Feedback Mode(CFB)
+//!
+//! 记有初始向量IV(IV可以不保密, 但是**它必须是不可预测的(unpredictable)**.), b是分组加密函数的分组位大小, s是给定的整数参数满足$1 \le s \le b$. <br>
+//!
+//! $$
+//! I_1 = IV; I_j = LSB_{b-s}(I_{j-1}) | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; C'_j = P'_j \xor MSB_{s}(O_j), j = 1...n;
+//!
+//! I_1 = IV; I_j = LSB_{b-s}(I_{j-1}) | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; P'_j = C'_j \xor MSB_{s}(O_j), j = 1...n;
+//! $$
+//!
+//! 在CFB模式中, 当前加密的输入块数据是上一次的加密输出和上一次的加密输入的结合, 即当前加密输出反馈到输出结合得到下一个加密的输入. <br>
+//! 每次加密依赖前一次的加密输出, 故Encrypt无法并行. Decrypt的输入是依赖前一次的输入, 当每次加密的输入$IV_j$都计算出来的前提下, Decrypt是可并行的. <br>
+//! <br>
+//!
+
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::{
     BlockCipher, BlockEncrypt, BlockPadding, CipherError, StreamCipherFinish, StreamDecrypt,

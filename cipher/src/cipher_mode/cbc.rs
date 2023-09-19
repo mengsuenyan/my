@@ -1,3 +1,17 @@
+//! ## The Cipher Block Chaining Mode(CBC)
+//!
+//! 给定初始向量IV, IV可以不保密, 但是**它必须是不可预测的(unpredictable)**. <br>
+//!
+//! $$
+//! C_1 = Encrypt(P_1 \xor IV); C_j = Encrypt(P_j \xor C_{j-1}), j = 2...n
+//!
+//! P_1 = Decrypt(C_1) \xor IV; P_j = Decrypt(C_j) \xor C_{j-1}, j = 2...n
+//! $$
+//!
+//! 在CBC模式中, 加密每个明文块依赖前一个密文输出, 故Encrypt无法并行. 但Decrypt是可以并行的. <br>
+//! <br>
+//!
+
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::BlockPadding;
 use crate::{
