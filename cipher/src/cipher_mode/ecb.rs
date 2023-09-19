@@ -1,3 +1,17 @@
+//! 笔记: `分组加密工作模式.md` <br>
+//! <br>
+//! ## The Electronic Codebook Mode(ECB)
+//!
+//! $$
+//! C_j = Encrypt(P_j), j = 1...n
+//!
+//! P_j = Decrypt(C_j), j = 1...n
+//! $$
+//!
+//! 给定的密钥, 每个明文块和密文块一一对应(如果不期待使用这一特性, 不应该使用ECB模式), 加解密都可并行. <br>
+//! <br>
+//!
+
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::BlockPadding;
 use crate::stream_cipher::StreamCipherFinish;

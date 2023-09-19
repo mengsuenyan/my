@@ -1,3 +1,18 @@
+//! ## The Output Feedback Mode(OFB)
+//!
+//! 给定初始向量IV, **其需要是一个nonce值**. 即对于给定的密钥, 每次执行OFB模式时, $IV$都需要是独一无二的(unique), 且需要是保密的. <br>
+//!
+//! $$
+//! I_1 = IV; I_j = O_{j-1}, j = 2...n; O_j = Encrypt(I_j), C_j = P_j \xor O_j, j = 1...n-1; C'_n = P'_n \xor MSB_u(O_n);
+//!
+//! I_1 = IV; I_j = O_{j-1}, j = 2...n; O_j = Encrypt(I_j), P_j = C_j \xor O_j, j = 1...n-1; P'_n = C'_n \xor MSB_u(O_n);
+//! $$
+//!
+//! 从OFB的工作方式可以看出, 每次加解密都依赖于前一次的加解密, 因此加解密都是无法并行的. 另外, $IV$的保密性随机性需要保证,
+//! 否则某个明文泄露则之后的密文都会计算出来, 从而之后的明文都会解密出来. <br>
+//! <br>
+//!
+
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::{
     BlockCipher, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt,

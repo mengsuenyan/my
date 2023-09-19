@@ -1,3 +1,16 @@
+//! ## The Counter Mode(CTR)
+//!
+//! 给定计数器, 其生成的计数值$T_i$每个都需要是相异的, 且需要是保密的. <br>
+//!
+//! $$
+//! O_j = Encrypt(T_j), j = 1...n; C_j = P_j \xor O_j, j = 1...n-1; C'_n = P'_n \xor MSB_u(O_n);
+//!
+//! O_j = Encrypt(T_j), j = 1...n; P_j = C_j \xor O_j, j = 1...n-1; P'_n = C'_n \xor MSB_u(O_n);
+//! $$
+//!
+//! 在CTR工作模式中, 如果每个$T_i$能提前计算出来, 那么加解密可以并行.
+//!
+
 use crate::block_cipher::{BlockCipher, AES, AES128, AES192, AES256};
 use crate::cipher_mode::Counter;
 use crate::{BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
