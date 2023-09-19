@@ -25,6 +25,17 @@ pub enum CipherError {
     /// 未设置初始化向量
     NotSetInitialVec,
 
+    /// 不合法的计数器 <br>
+    /// - `is_iv`:
+    ///   - `true`: 表示计数器的初始化向量长度`len`太小;
+    ///   - `false`: 表示计数器产生的计数范围在`len`之后会有重复;
+    InvalidCounter {
+        len: usize,
+        is_iv: bool,
+    },
+
+    NotSetCounter,
+
     Other(String),
 }
 
@@ -51,6 +62,18 @@ impl Display for CipherError {
                 if *is_encrypt { "encrypt" } else { "decrypt" }
             )),
             CipherError::NotSetInitialVec => f.write_str("Not set initial vector"),
+            CipherError::InvalidCounter { len, is_iv } => {
+                if *is_iv {
+                    f.write_fmt(format_args!(
+                        "Counter initial vector byte lengths `{len}` is too short"
+                    ))
+                } else {
+                    f.write_fmt(format_args!(
+                        "Counter count range has duplicated after generated {len} counts"
+                    ))
+                }
+            }
+            CipherError::NotSetCounter => f.write_str("Not set Counter"),
             CipherError::Other(other) => f.write_str(other.as_str()),
         }
     }
