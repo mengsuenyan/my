@@ -66,3 +66,6 @@ pub use counter::{Counter, DefaultCounter};
 
 mod ctr;
 pub use ctr::{AES128Ctr, AES192Ctr, AES256Ctr, AESCtr, CTR};
+
+mod cbc_cs;
+pub use cbc_cs::{AES128CbcCs, AES192CbcCs, AES256CbcCs, AESCbcCs, CBCCs, CBCCsMode};

@@ -18,6 +18,7 @@ use crate::{
     BlockCipher, BlockEncrypt, BlockPadding, CipherError, StreamCipherFinish, StreamDecrypt,
     StreamEncrypt,
 };
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
@@ -29,7 +30,7 @@ pub struct CFB<P, E, const BLOCK_SIZE: usize> {
     //缓存输入数据
     data: Vec<u8>,
     //缓存输出数据
-    out_buf: Vec<u8>,
+    out_buf: VecDeque<[u8; BLOCK_SIZE]>,
     /// 初始化向量
     iv: Option<[u8; BLOCK_SIZE]>,
     cipher: E,
@@ -81,10 +82,10 @@ where
 
         Ok(Self {
             data: Vec::with_capacity(bytes),
-            out_buf: vec![],
+            out_buf: VecDeque::new(),
             iv: Some(iv),
             cipher,
-            padding: P::new(N),
+            padding: P::new(bytes),
             is_encrypt: None,
             s: bytes,
         })
@@ -177,33 +178,14 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(true)?;
         self.check_iv()?;
-        let n = self.s;
-        let mut out_len = 0;
+        let (mut buf, n, mut out_len) = (Vec::with_capacity(2048), self.s, 0);
 
-        let mut buf = Vec::with_capacity(1024);
+        buf.extend(self.data.iter());
+        self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut buf = buf.as_slice();
-
-        if !self.data.is_empty() {
-            let l = (n - self.data.len()).min(buf.len());
-            self.data.extend(&buf[..l]);
-            buf = &buf[l..];
-        }
-
-        if self.data.len() == n {
-            let d = Self::encrypt_inner(
-                &self.cipher,
-                self.iv.as_mut().unwrap(),
-                self.data.as_slice(),
-            );
-            out_data.write_all(&d[..n]).map_err(CipherError::from)?;
-            self.data.clear();
-            out_len += n;
-        }
-
         let mut itr = buf.chunks_exact(n);
-        for data in &mut itr {
-            let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), data);
+        for chunk in &mut itr {
+            let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), chunk);
             out_data.write_all(&d[..n]).map_err(CipherError::from)?;
             out_len += n;
         }
@@ -250,55 +232,36 @@ where
         self.check_iv()?;
 
         let n = self.s;
-        let mut out_len = 0;
-        let padding_len = self.padding.max_padding_blocks().max(1) * n.max(16);
-        let tgt_len = padding_len * 32;
+        let padding_blocks = self.padding.max_padding_blocks().max(1);
+        let (tgt_len, mut out_len, mut buf) = (
+            padding_blocks.max(32) + padding_blocks,
+            0,
+            Vec::with_capacity(2048),
+        );
 
-        let mut buf = Vec::with_capacity(1024);
+        buf.extend(self.data.iter());
+        self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut buf = buf.as_slice();
-
-        if !self.data.is_empty() {
-            let l = (n - self.data.len()).min(buf.len());
-            self.data.extend(&buf[..l]);
-            buf = &buf[l..];
-        }
-
-        if self.data.len() == n {
-            let d = Self::decrypt_inner(
-                &self.cipher,
-                self.iv.as_mut().unwrap(),
-                self.data.as_slice(),
-            );
-            self.out_buf.extend(&d[..n]);
-            self.data.clear();
-        }
-
         let mut itr = buf.chunks_exact(n);
-        for data in &mut itr {
-            let d = Self::decrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), data);
-            self.out_buf.extend(&d[..n]);
-
-            let l = self.out_buf.len();
-            if l >= tgt_len {
-                out_data
-                    .write_all(&self.out_buf.as_slice()[..(l - padding_len)])
-                    .map_err(CipherError::from)?;
-                out_len += l - padding_len;
-                for i in 0..padding_len {
-                    self.out_buf.swap(i, l - padding_len + i);
+        for chunk in &mut itr {
+            let d = Self::decrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), chunk);
+            self.out_buf.push_back(d);
+            if self.out_buf.len() > tgt_len {
+                while self.out_buf.len() > padding_blocks {
+                    out_data
+                        .write_all(&self.out_buf.pop_front().unwrap()[..n])
+                        .map_err(CipherError::from)?;
+                    out_len += n;
                 }
-                self.out_buf.truncate(padding_len);
             }
         }
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
             let mut itr = sf.data.chunks_exact(n);
-
             for data in &mut itr {
                 let d = Self::decrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), data);
-                sf.out_buf.extend(&d[..n]);
+                sf.out_buf.push_back(d);
             }
 
             let len = itr.remainder().len();
@@ -309,14 +272,17 @@ where
                     real: len,
                 })
             } else {
-                sf.padding.unpadding(&mut sf.out_buf)?;
+                let mut buf = Vec::with_capacity(sf.out_buf.len() * n);
+                sf.out_buf.iter().for_each(|x| {
+                    buf.extend(&x[..n]);
+                });
+                sf.padding.unpadding(&mut buf)?;
 
-                let s = sf.out_buf.len();
                 outdata
-                    .write_all(sf.out_buf.as_slice())
+                    .write_all(buf.as_slice())
                     .map_err(CipherError::from)?;
                 sf.clear_resource();
-                Ok(s)
+                Ok(buf.len())
             }
         });
 
@@ -492,7 +458,7 @@ mod tests {
             cfb.encrypt(pt.as_slice(), &mut cfb_out).unwrap();
             assert_eq!(
                 cfb_out.len(),
-                ct.len() + padding.max_padding_blocks() * AES::BLOCK_SIZE,
+                ct.len() + padding.max_padding_blocks() * s,
                 "case {i} failed, invalid result length"
             );
             assert_eq!(

@@ -18,6 +18,7 @@ use crate::{
     BlockCipher, BlockDecrypt, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt,
     StreamEncrypt,
 };
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use utils::Block;
 #[cfg(feature = "sec-zeroize")]
@@ -28,9 +29,9 @@ use zeroize::Zeroize;
 /// 给定初始向量IV, IV可以不保密, 但是**它必须是不可预测的(unpredictable)**. 因此, 使用过后再次进行加解密时需调用`self.set_iv`设置新的`IV`. <br>
 pub struct CBC<P, E, const BLOCK_SIZE: usize> {
     //缓存输入数据
-    data: Block,
+    data: Vec<u8>,
     //缓存输出数据
-    out_buf: Vec<u8>,
+    out_buf: VecDeque<[u8; BLOCK_SIZE]>,
     /// 初始化向量
     iv: Option<[u8; BLOCK_SIZE]>,
     cipher: E,
@@ -63,6 +64,10 @@ impl<P, E, const N: usize> CBC<P, E, N> {
             Ok(())
         }
     }
+
+    pub(super) fn get_cipher(&self) -> &E {
+        &self.cipher
+    }
 }
 
 impl<P, E, const N: usize> CBC<P, E, N>
@@ -71,8 +76,8 @@ where
 {
     pub fn new(cipher: E, iv: [u8; N]) -> Self {
         Self {
-            data: Block::with_capacity(N),
-            out_buf: vec![],
+            data: Vec::with_capacity(N),
+            out_buf: VecDeque::new(),
             iv: Some(iv),
             cipher,
             padding: P::new(N),
@@ -124,7 +129,6 @@ where
 {
     fn zeroize(&mut self) {
         self.cipher.zeroize();
-        self.data.zeroize();
         self.iv.zeroize();
     }
 }
@@ -141,65 +145,41 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(true)?;
         self.check_iv()?;
-        let (mut in_len, mut out_len) = (0, 0);
-        let mut buf = vec![];
-        buf.resize(N << 1, 0);
 
-        loop {
-            let s = in_data
-                .read(&mut buf.as_mut_slice()[0..(N + N - self.data.len())])
+        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        buf.extend(self.data.iter());
+        self.data.clear();
+        let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
+
+        let mut itr = buf.chunks_exact(N);
+        for chunk in &mut itr {
+            let d = Self::encrypt_inner(
+                &self.cipher,
+                self.iv.as_mut().unwrap(),
+                Block::as_arr_ref_uncheck(chunk),
+            );
+            out_data
+                .write_all(d.as_slice())
                 .map_err(CipherError::from)?;
-            let mut data = &buf.as_slice()[0..s];
-            in_len += s;
-
-            if !self.data.is_empty() {
-                let m = (N - self.data.len()).min(data.len());
-                self.data.extend(&data[0..m]);
-                data = &data[m..];
-            }
-
-            if let Some(arr) = self.data.as_arr::<N>() {
-                let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), arr);
-                out_data
-                    .write_all(d.as_slice())
-                    .map_err(CipherError::from)?;
-                out_len += N;
-                self.data.clear();
-            }
-
-            while data.len() >= N {
-                let block = Block::as_arr_ref_uncheck(&data[0..N]);
-                let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), block);
-                out_data
-                    .write_all(d.as_slice())
-                    .map_err(CipherError::from)?;
-                out_len += N;
-                data = &data[N..];
-            }
-
-            if !data.is_empty() {
-                self.data.extend(data);
-            }
-
-            if s == 0 {
-                break;
-            }
+            out_len += N;
         }
+        self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
             sf.padding.padding(sf.data.as_mut());
-            let mut data = sf.data.as_slice();
 
-            let mut s = 0;
-            while data.len() >= N {
-                let block = Block::as_arr_ref_uncheck(&data[0..N]);
-                let d = Self::encrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), block);
+            let (mut itr, mut s) = (sf.data.chunks_exact(N), 0);
+            for chunk in &mut itr {
+                let d = Self::encrypt_inner(
+                    &sf.cipher,
+                    sf.iv.as_mut().unwrap(),
+                    Block::as_arr_ref_uncheck(chunk),
+                );
                 outdata.write_all(d.as_slice()).map_err(CipherError::from)?;
                 s += N;
-                data = &data[N..];
             }
 
-            let len = data.len();
+            let len = itr.remainder().len();
             sf.clear_resource();
             if len > 0 {
                 Err(CipherError::InvalidBlockSize {
@@ -227,70 +207,48 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(false)?;
         self.check_iv()?;
-        let (mut in_len, mut out_len) = (0, 0);
-        let padding_len = self.padding.max_padding_blocks().max(1) * N;
-        let tgt_len = padding_len * 32;
-        let mut buf = vec![];
-        buf.resize(N << 1, 0);
 
-        loop {
-            let s = in_data
-                .read(&mut buf.as_mut_slice()[0..(N + N - self.data.len())])
-                .map_err(CipherError::from)?;
-            let mut data = &buf[0..s];
-            in_len += s;
+        let padding_blocks = self.padding.max_padding_blocks().max(1);
+        let (tgt_len, mut out_len, mut buf) = (
+            padding_blocks.max(32) + padding_blocks,
+            0,
+            Vec::with_capacity(2048),
+        );
 
-            if !self.data.is_empty() {
-                let l = (N - self.data.len()).min(data.len());
-                self.data.extend(&data[0..l]);
-                data = &data[l..];
-            }
-
-            if let Some(arr) = self.data.as_arr() {
-                let d = Self::decrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), arr);
-                self.out_buf.extend(d);
-                self.data.clear();
-            }
-
-            while data.len() >= N {
-                let arr = Block::as_arr_ref_uncheck(&data[0..N]);
-                let d = Self::decrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), arr);
-                self.out_buf.extend(d);
-                data = &data[N..];
-            }
-
-            if !data.is_empty() {
-                self.data.extend(data);
-            }
-
-            if s == 0 {
-                break;
-            }
-
-            let l = self.out_buf.len();
-            if l >= tgt_len {
-                out_data
-                    .write_all(&self.out_buf.as_slice()[0..(l - padding_len)])
-                    .map_err(CipherError::from)?;
-                out_len += l - padding_len;
-                for i in 0..padding_len {
-                    self.out_buf.swap(i, l - padding_len + i);
+        buf.extend(self.data.iter());
+        self.data.clear();
+        let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
+        let mut itr = buf.chunks_exact(N);
+        for chunk in &mut itr {
+            let d = Self::decrypt_inner(
+                &self.cipher,
+                self.iv.as_mut().unwrap(),
+                Block::as_arr_ref_uncheck(chunk),
+            );
+            self.out_buf.push_back(d);
+            if self.out_buf.len() > tgt_len {
+                while self.out_buf.len() > padding_blocks {
+                    out_data
+                        .write_all(&self.out_buf.pop_front().unwrap())
+                        .map_err(CipherError::from)?;
+                    out_len += N;
                 }
-                self.out_buf.truncate(padding_len);
             }
         }
+        self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
-            let mut data = sf.data.as_slice();
-
-            while data.len() >= N {
-                let arr = Block::as_arr_ref_uncheck(&data[..N]);
-                let d = Self::decrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), arr);
-                sf.out_buf.extend(d);
-                data = &data[N..];
+            let mut itr = sf.data.chunks_exact(N);
+            for chunk in &mut itr {
+                let d = Self::decrypt_inner(
+                    &sf.cipher,
+                    sf.iv.as_mut().unwrap(),
+                    Block::as_arr_ref_uncheck(chunk),
+                );
+                sf.out_buf.push_back(d);
             }
 
-            let len = data.len();
+            let len = itr.remainder().len();
             if len > 0 {
                 sf.clear_resource();
                 Err(CipherError::InvalidBlockSize {
@@ -298,14 +256,14 @@ where
                     real: len,
                 })
             } else {
-                sf.padding.unpadding(&mut sf.out_buf)?;
+                let mut buf = sf.out_buf.iter().copied().flatten().collect::<Vec<_>>();
+                sf.padding.unpadding(&mut buf)?;
 
-                let s = sf.out_buf.len();
                 outdata
-                    .write_all(sf.out_buf.as_slice())
+                    .write_all(buf.as_slice())
                     .map_err(CipherError::from)?;
                 sf.clear_resource();
-                Ok(s)
+                Ok(buf.len())
             }
         });
 
@@ -314,7 +272,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::cipher_mode) mod tests {
     use super::{StreamDecrypt, StreamEncrypt};
     use crate::block_cipher::AES;
     use crate::cipher_mode::{AESCbc, DefaultPadding, EmptyPadding};
@@ -324,7 +282,7 @@ mod tests {
     use std::cell::RefCell;
 
     /// (key, iv, plaintext, ciphertext)
-    fn cases() -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    pub(in crate::cipher_mode) fn cases() -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
         let cases = [
             (
                 "2b7e151628aed2a6abf7158809cf4f3c",
