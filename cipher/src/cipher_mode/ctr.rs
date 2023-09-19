@@ -143,51 +143,26 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(is_encrypt)?;
         self.check_counter()?;
-        let mut out_len = 0;
+        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
 
-        let mut buf = Vec::with_capacity(1024);
+        buf.extend(self.data.iter());
+        self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut data = buf.as_slice();
 
-        if !self.data.is_empty() {
-            let l = (N - self.data.len()).min(data.len());
-            self.data.extend(&data[..l]);
-            data = &data[l..];
-        }
-
-        if self.data.len() == N {
-            let d = Self::encrypt_inner(
-                &self.cipher,
-                self.counter.as_mut().unwrap(),
-                self.data.as_slice(),
-            )
-            .ok_or(CipherError::InvalidCounter {
-                len: out_len % N,
-                is_iv: false,
-            })?;
-            out_data
-                .write_all(d.as_slice())
-                .map_err(CipherError::from)?;
-            out_len += N;
-            self.data.clear();
-        }
-
-        while data.len() >= N {
-            let d = Self::encrypt_inner(&self.cipher, self.counter.as_mut().unwrap(), &data[..N])
+        let mut itr = buf.chunks_exact(N);
+        for chunk in &mut itr {
+            let d = Self::encrypt_inner(&self.cipher, self.counter.as_mut().unwrap(), chunk)
                 .ok_or(CipherError::InvalidCounter {
-                len: out_len % N,
-                is_iv: false,
-            })?;
+                    len: out_len % N,
+                    is_iv: false,
+                })?;
             out_data
                 .write_all(d.as_slice())
                 .map_err(CipherError::from)?;
             out_len += N;
-            data = &data[N..];
         }
 
-        if !data.is_empty() {
-            self.data.extend(data);
-        }
+        self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
             let mut s = 0;
