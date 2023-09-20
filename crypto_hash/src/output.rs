@@ -94,13 +94,6 @@ impl<T: Digest> Zeroize for Output<T> {
     }
 }
 
-#[cfg(feature = "sec-zeroize-drop")]
-impl<T> Drop for Output<T> {
-    fn drop(&mut self) {
-        self.data.zeroize();
-    }
-}
-
 impl<T> AsRef<[u8]> for Output<T> {
     fn as_ref(&self) -> &[u8] {
         &self.data
@@ -123,6 +116,12 @@ impl<T: Digest, const N: usize> TryFrom<Output<T>> for [u8; N] {
 
             Ok(arr)
         }
+    }
+}
+
+impl<T> From<Output<T>> for Vec<u8> {
+    fn from(value: Output<T>) -> Self {
+        value.data
     }
 }
 

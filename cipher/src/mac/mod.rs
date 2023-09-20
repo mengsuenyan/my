@@ -9,8 +9,8 @@ pub trait MAC: Write {
     /// 摘要大小
     const DIGEST_SIZE: usize;
 
-    /// finalize获取本轮的MAC
-    fn finalize(&mut self) -> Vec<u8>;
+    /// 获取本轮的MAC
+    fn mac(&mut self) -> Vec<u8>;
 
     /// 重置MAC到初始化状态
     fn reset(&mut self);
@@ -18,3 +18,6 @@ pub trait MAC: Write {
 
 mod cmac;
 pub use cmac::CMAC;
+
+mod hmac;
+pub use hmac::HMAC;
