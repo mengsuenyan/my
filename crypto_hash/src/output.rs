@@ -16,7 +16,7 @@ pub struct Output<T> {
 }
 
 impl<T> Output<T> {
-    pub(crate) fn from_vec(digest: Vec<u8>) -> Self {
+    pub(crate) const fn from_vec(digest: Vec<u8>) -> Self {
         Self {
             data: digest,
             digest: PhantomData,
@@ -56,7 +56,7 @@ impl<T> Output<T> {
 
     /// 获取第`index`字节的位数据, 从`0`开始索引.
     pub fn bit(&self, index: usize) -> Option<bool> {
-        self.byte((index + 8) / 8)
+        self.byte((index + 7) / 8)
             .map(|d| (d & (1u8 << (index % 8))) > 0)
     }
 }
@@ -64,12 +64,26 @@ impl<T> Output<T> {
 impl<T: Digest> Output<T> {
     /// 字节长度
     pub const fn bytes() -> usize {
-        (<T>::DIGEST_BITS + 8) >> 3
+        (<T>::DIGEST_BITS + 7) >> 3
     }
 
     /// 位长度
     pub const fn bits() -> usize {
         <T>::DIGEST_BITS
+    }
+
+}
+
+impl<T: Digest, const N: usize> TryFrom<[u8; N]> for Output<T> {
+    type Error = HashError;
+    
+    /// `N != Self::bytes()`会返回`None`
+    fn try_from(value: [u8; N]) -> Result<Self, Self::Error> {
+        if N == Self::bytes() {
+            Ok(Self::from_vec(value.to_vec()))
+        } else {
+            Err(HashError::MismatchingByteLen {target: Self::bytes(), real: N})
+        }
     }
 }
 
