@@ -29,6 +29,7 @@ where
 /// 最后再将实际数据的位长度填充到LEN_PADDING_TYPE::BITS长度的空间中, 以使得填充后的数据长度是BLOCK_BITS的整数倍.<br>
 /// <br>
 /// $NAME: 结构体的名字<br>
+/// $WORD_TYPE: 存储一个单词使用的类型<br>
 /// $BLOCK_BITS: 块位长度<br>
 /// $WORD_BITS: 单词位长度<br>
 /// $DIGEST_BITS: 摘要位长度<br>
@@ -195,6 +196,7 @@ macro_rules! sha_common {
         $DIGEST_BITS: literal,
         $INIT_CONST: expr
     ) => {
+        #[derive(Clone)]
         pub struct $NAME {
             sha: $PARENT,
         }

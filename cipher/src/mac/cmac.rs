@@ -10,6 +10,8 @@
 
 use crate::{BlockEncrypt, CipherError, MAC};
 use std::io::Write;
+#[cfg(feature = "sec-zeroize")]
+use zeroize::Zeroize;
 
 pub struct CMAC<E, const N: usize> {
     k1: [u8; N],
@@ -20,6 +22,7 @@ pub struct CMAC<E, const N: usize> {
     // 下一个可以存放数据的索引
     buf_idx: usize,
     cipher: E,
+    is_finalize: bool,
 }
 
 impl<E, const N: usize> CMAC<E, N> {
@@ -90,6 +93,7 @@ where
             ci: [0u8; N],
             buf_idx: 0,
             cipher,
+            is_finalize: false,
         })
     }
 
@@ -140,7 +144,19 @@ impl<E: Clone, const N: usize> Clone for CMAC<E, N> {
             ci: self.ci,
             k1: self.k1,
             k2: self.k2,
+            is_finalize: self.is_finalize,
         }
+    }
+}
+
+#[cfg(feature = "sec-zeroize")]
+impl<E: Zeroize, const N: usize> Zeroize for CMAC<E, N> {
+    fn zeroize(&mut self) {
+        self.cipher.zeroize();
+        self.ci.zeroize();
+        self.k1.zeroize();
+        self.k2.zeroize();
+        self.buf.zeroize();
     }
 }
 
@@ -153,6 +169,10 @@ where
     }
 
     fn write(&mut self, mut data: &[u8]) -> std::io::Result<usize> {
+        if self.is_finalize {
+            self.reset();
+        }
+
         let data_len = data.len();
         if self.buf_idx != N {
             let l = (N - self.buf_idx).min(data.len());
@@ -196,7 +216,11 @@ where
 {
     const BLOCK_SIZE: usize = N;
     const DIGEST_SIZE: usize = N;
-    fn finalize(&mut self) -> Vec<u8> {
+    fn mac(&mut self) -> Vec<u8> {
+        if self.is_finalize {
+            return self.ci.to_vec();
+        }
+
         if self.buf_idx == N {
             self.ci
                 .iter_mut()
@@ -215,12 +239,14 @@ where
                 })
         }
         self.ci = self.cipher.encrypt_block(&self.ci);
+        self.is_finalize = true;
         self.ci.to_vec()
     }
 
     fn reset(&mut self) {
         self.ci = [0u8; N];
         self.buf_idx = 0;
+        self.is_finalize = false;
     }
 }
 
@@ -342,7 +368,7 @@ mod tests {
             let mut cmac = CMAC::new(aes).unwrap();
             for (j, (msg, mac)) in case.into_iter().enumerate() {
                 cmac.write_all(msg.as_slice()).unwrap();
-                let tgt = cmac.finalize();
+                let tgt = cmac.mac();
                 assert_eq!(tgt, mac, "case {i}-{j} failed");
                 cmac.reset();
             }
