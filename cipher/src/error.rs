@@ -36,6 +36,8 @@ pub enum CipherError {
 
     NotSetCounter,
 
+    AEError(String),
+
     Other(String),
 }
 
@@ -74,6 +76,7 @@ impl Display for CipherError {
                 }
             }
             CipherError::NotSetCounter => f.write_str("Not set Counter"),
+            CipherError::AEError(msg) => f.write_str(msg.as_str()),
             CipherError::Other(other) => f.write_str(other.as_str()),
         }
     }

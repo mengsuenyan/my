@@ -16,6 +16,9 @@ pub use cipher_mode::BlockPadding;
 pub mod mac;
 pub use mac::MAC;
 
+pub mod ae;
+pub use ae::AuthenticationCipher;
+
 pub trait Encrypt {
     // 写入ciphertext之前不清空
     fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError>;

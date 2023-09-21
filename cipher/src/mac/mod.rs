@@ -1,3 +1,7 @@
+//! # Message Authentication Code(MAC)
+//!
+//! Authentication: 验证消息的完整性+身份;
+//!
 use std::io::Write;
 
 /// marker for Message Authentication Code <br>
