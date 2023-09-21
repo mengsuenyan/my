@@ -4,6 +4,8 @@
 //! [NIST 800-38A, Recommendation for Block Cipher Modes of operation Methods and Techniques](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf)<br>
 //! [NIST 800-38A-add, Three Variants of Ciphertext Stealing for CBC mode](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a-add.pdf)
 //!
+//! Confidentiality: 数据的保密(加密);
+//!
 
 macro_rules! impl_set_working_flag {
     ($NAME: ident) => {

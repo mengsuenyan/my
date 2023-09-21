@@ -76,11 +76,12 @@ impl<D: Digest> HMAC<D> {
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<D> Zeroize for HMAC<D> {
+impl<D: Zeroize> Zeroize for HMAC<D> {
     fn zeroize(&mut self) {
         self.k0_o.zeroize();
         self.k0_i.zeroize();
         self.pre_mac.zeroize();
+        self.digest.zeroize();
     }
 }
 
