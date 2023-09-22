@@ -13,7 +13,7 @@ pub trait AuthenticationCipher {
 
     /// `(nonce, in_data, associated_data) ---认证加密---> out_data` <br>
     /// 返回从`in_data`和`out_data`读入写入数据的字节长度
-    fn encrypt<R: Read, W: Write>(
+    fn auth_encrypt<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
@@ -23,7 +23,7 @@ pub trait AuthenticationCipher {
 
     /// `(nonce, in_data, associated_data) ---认证解密---> out_data` <br>
     /// 返回从`in_data`和`out_data`读入写入数据的字节长度
-    fn decrypt<R: Read, W: Write>(
+    fn auth_decrypt<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
@@ -34,3 +34,9 @@ pub trait AuthenticationCipher {
 
 mod ccm;
 pub use ccm::{AES128Ccm, AES192Ccm, AES256Ccm, AESCcm, CCM};
+
+mod gcm;
+pub use gcm::{
+    AES128Gcm, AES128GcmStream, AES192Gcm, AES192GcmStream, AES256Gcm, AES256GcmStream, AESGcm,
+    AESGcmStream, GcmStream, GCM,
+};
