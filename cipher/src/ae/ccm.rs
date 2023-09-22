@@ -26,7 +26,7 @@ use std::io::{Read, Write};
 ///
 /// - Y0 = CIPH_k(B0);
 /// - Y_i = CIPH_k(Bi ^ Y_{i-1}), i=1..r;
-/// - T = MSB_t(Y_r);
+/// - T = MSB_t(Y_r); # MAC的计算必须事先知道payload的长度, 因为其是编码到B0中的, 而且计算过程是链式的, 即依赖前一次的输出.
 /// - 计算Ctr_i, i=0..m, m = (p + block_size - 1) / block_size;
 /// - Sj = CIPH_k(Ctr_j), j=0..m;
 /// - S = S1 || ... || Sm;
@@ -180,6 +180,18 @@ impl<E, const N: usize> CCM<E, N> {
     }
 }
 
+impl<E, const N: usize> Clone for CCM<E, N>
+where
+    E: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            mac_size: self.mac_size,
+            cipher: self.cipher.clone(),
+        }
+    }
+}
+
 impl<E, const N: usize> CCM<E, N>
 where
     E: BlockEncrypt<N>,
@@ -245,7 +257,7 @@ where
         self.mac_size
     }
 
-    fn encrypt<R: Read, W: Write>(
+    fn auth_encrypt<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
@@ -278,7 +290,7 @@ where
         Ok((payload.len(), payload.len() + self.mac_size))
     }
 
-    fn decrypt<R: Read, W: Write>(
+    fn auth_decrypt<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
@@ -315,19 +327,14 @@ where
         let tgt = &ciphertext[(ciphertext.len() - self.mac_size)..];
 
         if tgt != mac {
-            let (mut ts, mut macs) = (
-                String::with_capacity(2 + (N << 1)),
-                String::with_capacity(2 + (N << 1)),
+            let (mac_tgt, mac) = (
+                tgt.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
+                mac.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
             );
-            ts.push_str("0x");
-            macs.push_str("0x");
-            tgt.iter()
-                .for_each(|x| ts.push_str(format!("{:02x}", x).as_str()));
-            mac.iter()
-                .for_each(|x| macs.push_str(format!("{:02x}", x).as_str()));
+
             Err(CipherError::AEError(format!(
                 "Invalid MAC value, {} != {}",
-                ts, macs
+                mac_tgt, mac
             )))
         } else {
             out_data.write_all(payload).map_err(CipherError::from)?;
@@ -345,7 +352,7 @@ mod tests {
     use num_traits::Num;
 
     #[test]
-    fn ccm() {
+    fn ccm_aes() {
         // (key, N, A, P, C)
         let cases = [
             (
@@ -403,7 +410,7 @@ mod tests {
 
             let (mut buf, mut pt) = (Vec::new(), p.as_slice());
             let (ilen, olen) = ccm
-                .encrypt(n.as_slice(), a.as_slice(), &mut pt, &mut buf)
+                .auth_encrypt(n.as_slice(), a.as_slice(), &mut pt, &mut buf)
                 .unwrap();
             assert_eq!(ilen + mac_size, olen, "case {i} encrypt failed");
             assert_eq!(buf, c, "case {i} encrypt failed");
@@ -411,7 +418,7 @@ mod tests {
             buf.clear();
             let mut ct = c.as_slice();
             let (ilen, olen) = ccm
-                .decrypt(n.as_slice(), a.as_slice(), &mut ct, &mut buf)
+                .auth_decrypt(n.as_slice(), a.as_slice(), &mut ct, &mut buf)
                 .unwrap();
             assert_eq!(ilen, olen + mac_size, "case {i} decrypt failed");
             assert_eq!(buf, p, "case {i} decrypt failed");
