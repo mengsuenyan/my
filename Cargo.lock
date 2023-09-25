@@ -180,6 +180,7 @@ name = "crypto_hash"
 version = "0.1.0"
 dependencies = [
  "num-bigint",
+ "num-traits",
  "utils",
  "zeroize",
 ]

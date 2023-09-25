@@ -11,8 +11,8 @@ use zeroize::Zeroize;
 #[derive(Clone, Debug)]
 pub struct Output<T> {
     // Output是由哈希算法生成, 由实现算法保证`self.len() == Self::bytes()`
-    data: Vec<u8>,
-    digest: PhantomData<T>,
+    pub(crate) data: Vec<u8>,
+    pub(crate) digest: PhantomData<T>,
 }
 
 impl<T> Output<T> {
@@ -23,8 +23,9 @@ impl<T> Output<T> {
         }
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<u8> {
-        self.data.clone()
+    #[allow(clippy::wrong_self_convention)]
+    pub(crate) fn to_vec(self) -> Vec<u8> {
+        self.data
     }
 
     /// 字节长度
@@ -71,18 +72,20 @@ impl<T: Digest> Output<T> {
     pub const fn bits() -> usize {
         <T>::DIGEST_BITS
     }
-
 }
 
 impl<T: Digest, const N: usize> TryFrom<[u8; N]> for Output<T> {
     type Error = HashError;
-    
+
     /// `N != Self::bytes()`会返回`None`
     fn try_from(value: [u8; N]) -> Result<Self, Self::Error> {
         if N == Self::bytes() {
             Ok(Self::from_vec(value.to_vec()))
         } else {
-            Err(HashError::MismatchingByteLen {target: Self::bytes(), real: N})
+            Err(HashError::MismatchingByteLen {
+                target: Self::bytes(),
+                real: N,
+            })
         }
     }
 }
