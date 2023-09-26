@@ -28,7 +28,7 @@ impl TokeiCmd {
 impl Cmd for TokeiCmd {
     const NAME: &'static str = "tokei";
 
-    fn cmd(&self) -> Command {
+    fn cmd() -> Command {
         Command::new(Self::NAME)
             .about("Use tokei to count code")
             .arg(

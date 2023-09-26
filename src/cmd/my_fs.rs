@@ -19,7 +19,7 @@ impl MyFsCmd {
 impl Cmd for MyFsCmd {
     const NAME: &'static str = "fs";
 
-    fn cmd(&self) -> Command {
+    fn cmd() -> Command {
         Command::new(Self::NAME)
             .about("my filesystem management")
             .arg(
