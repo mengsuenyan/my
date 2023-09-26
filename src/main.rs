@@ -1,14 +1,15 @@
-use std::time::SystemTime;
-
 use chrono::{DateTime, Local};
 use clap::Command;
 use log::LevelFilter;
-use my::cmd::{Cmd, GitCmd, MyFsCmd, TokeiCmd};
+use my::cmd::{Cmd, EncCmd, GitCmd, MyFsCmd, TokeiCmd};
+use std::io::Read;
+use std::time::SystemTime;
 
 fn main() {
-    env_logger::builder().filter_level(LevelFilter::Info).init();
-
-    let (myfs, tokei, git) = (MyFsCmd::new(), TokeiCmd::new(), GitCmd::new().unwrap());
+    env_logger::builder()
+        .filter_level(LevelFilter::Info)
+        .parse_default_env()
+        .init();
 
     let version = format!(
         "{}-{}",
@@ -18,24 +19,24 @@ fn main() {
     let app = Command::new("my")
         .version(version)
         .about("my resource management")
-        .subcommand(myfs.cmd())
-        .subcommand(tokei.cmd())
-        .subcommand(git.cmd())
+        .subcommand(MyFsCmd::cmd())
+        .subcommand(TokeiCmd::cmd())
+        .subcommand(GitCmd::cmd())
+        .subcommand(EncCmd::cmd())
         .get_matches();
 
-    match app.subcommand() {
-        Some((MyFsCmd::NAME, m)) => {
-            myfs.run(m);
+    if let Some((s, m)) = app.subcommand() {
+        let mut pipe_data = String::new();
+        std::io::stdin().read_to_string(&mut pipe_data).unwrap();
+
+        match s {
+            MyFsCmd::NAME => MyFsCmd::new().run(m),
+            TokeiCmd::NAME => TokeiCmd::new().run(m),
+            GitCmd::NAME => GitCmd::new().unwrap().run(m),
+            EncCmd::NAME => EncCmd::new(pipe_data).run(m),
+            name => {
+                panic!("unsupport for {}", name)
+            }
         }
-        Some((TokeiCmd::NAME, m)) => {
-            tokei.run(m);
-        }
-        Some((GitCmd::NAME, m)) => {
-            git.run(m);
-        }
-        Some((name, _)) => {
-            panic!("unsupport for {}", name)
-        }
-        None => {}
     }
 }

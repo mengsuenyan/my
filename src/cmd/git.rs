@@ -390,7 +390,7 @@ impl GitCmd {
 impl Cmd for GitCmd {
     const NAME: &'static str = "git";
 
-    fn cmd(&self) -> clap::Command {
+    fn cmd() -> clap::Command {
         Command::new(Self::NAME)
             .about("git operation")
             .arg(

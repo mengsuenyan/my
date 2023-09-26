@@ -1,7 +1,7 @@
 pub trait Cmd {
     const NAME: &'static str;
 
-    fn cmd(&self) -> Command;
+    fn cmd() -> Command;
 
     fn run(&self, m: &ArgMatches);
 }
@@ -39,3 +39,9 @@ pub use tokei::TokeiCmd;
 
 mod git;
 pub use git::GitCmd;
+
+mod enc;
+pub use enc::EncCmd;
+
+mod pipe_data;
+pub use pipe_data::PipeDataCmd;
