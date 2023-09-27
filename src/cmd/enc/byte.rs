@@ -42,7 +42,7 @@ impl ByteCmd {
                 }
             }
 
-            if s.len() & 7 != 7 {
+            if s.len() & 7 != 0 {
                 stream.write_all(&[if is_little_endian {
                     num.reverse_bits()
                 } else {
@@ -94,11 +94,11 @@ impl ByteCmd {
                 }
             }
 
-            if s.len() & 1 != 1 {
+            if s.len() & 1 != 0 {
                 if is_little_endian {
-                    stream.write_all(&[num])?;
-                } else {
                     stream.write_all(&[num << 4])?;
+                } else {
+                    stream.write_all(&[num])?;
                 }
             }
         } else {

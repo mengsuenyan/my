@@ -4,6 +4,7 @@ members = [
     "crypto_hash",
     "cipher",
     "utils",
+    "encode",
 ]
 
 [package]
