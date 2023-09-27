@@ -54,6 +54,7 @@ impl Encode for Base58 {
         let mut b58 = vec![];
         b58.resize(size, 0);
 
+        // b58 = 256 * b58 + ele
         for &ele in data.iter().skip(leading_zeros) {
             let (mut carry, mut i) = (ele as usize, 0);
 

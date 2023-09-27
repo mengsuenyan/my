@@ -32,3 +32,4 @@ env_logger = { version = "0.10.0" }
 url = { version = "2.4.1", features = ["serde"]}
 rand = { version = "0.8.5" }
 home = { version = "0.5.5" }
+encode = {path = "./encode"}

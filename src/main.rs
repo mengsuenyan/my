@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local};
-use clap::Command;
+use clap::{Arg, ArgAction, Command};
 use log::LevelFilter;
 use my::cmd::{Cmd, EncCmd, GitCmd, MyFsCmd, TokeiCmd};
 use std::io::Read;
@@ -19,6 +19,13 @@ fn main() {
     let app = Command::new("my")
         .version(version)
         .about("my resource management")
+        .arg(
+            Arg::new("pipe")
+                .long("pipe")
+                .short('p')
+                .action(ArgAction::SetTrue)
+                .required(false),
+        )
         .subcommand(MyFsCmd::cmd())
         .subcommand(TokeiCmd::cmd())
         .subcommand(GitCmd::cmd())
@@ -27,7 +34,9 @@ fn main() {
 
     if let Some((s, m)) = app.subcommand() {
         let mut pipe_data = String::new();
-        std::io::stdin().read_to_string(&mut pipe_data).unwrap();
+        if app.get_flag("pipe") {
+            std::io::stdin().read_to_string(&mut pipe_data).unwrap();
+        }
 
         match s {
             MyFsCmd::NAME => MyFsCmd::new().run(m),

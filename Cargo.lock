@@ -354,6 +354,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "encode",
  "env_logger",
  "home",
  "log",
