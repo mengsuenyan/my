@@ -14,3 +14,5 @@ impl<T, const N: usize> BlockCipher<N> for T where T: BlockDecrypt<N> + BlockEnc
 
 mod aes;
 pub use aes::{AES, AES128, AES192, AES256};
+mod sm4;
+pub use sm4::SM4;
