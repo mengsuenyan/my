@@ -60,5 +60,63 @@ mod tests {
                 "case {i} failed"
             )
         }
+
+        let cases = [
+            (
+                "tIwTEM2Z0X",
+                "2916a61c10ae08ec4fb61d334facb24fb19de83760819b8c1d92f1e0a1b07ab6",
+            ),
+            (
+                "fRsuAQE0aFG",
+                "4b27f3c3671f42424825a9cb0acd037bc5fdddee1c3d9d39104f3a11b90cb9a9",
+            ),
+            (
+                "DwGQPt8RsXVo",
+                "d431beae337c2b20ecc79df264300b96a20618a4699f86670f311451b8b3d1d5",
+            ),
+            (
+                "2GPCVgNvHef7Z",
+                "7b7284ffaa19b108fb9d0921e492f24fd408d389886d16519504ea411367577e",
+            ),
+            (
+                "yTbFhTm4Df6GyQ",
+                "d425f6c522622fe155c533b5fe4b5184b618b2cbcb09f7a7a4cd1e020f69e477",
+            ),
+            (
+                "fJZC9WWbVhM7Ia5",
+                "5153c21e5c944abb4a70d13e817e23294124fda05e091653ea893231be622c8c",
+            ),
+            (
+                "prlhHCWsZj4sg9iX",
+                "e104ee37332b7ffa9c683f044b66e0e6031e2e2f1f929107821e9060169b03ac",
+            ),
+            (
+                "jfFDD27wLpXERYUsn",
+                "0ea5b34e3f55e46d908f6cb903e446327618043c945acc92478de1c8717ded00",
+            ),
+            (
+                "wKKenUIoUXZ2124cDm",
+                "8e9c0b139644679c1e80f85b831e93d7b2cbd9504b17d7b8c88bd35148116037",
+            ),
+            (
+                "iPZGwN7ecykbn3y73PF",
+                "deec146ab330bd5fc935e352099507030fe839a67e4f0857fa5c4b537959205a",
+            ),
+            (
+                "e7ukofnCFQNwjqsaZ1Zg",
+                "62b3aad04704abd707146ae38e2631ba47bd7ff10335efe9f1de012c2a137134",
+            ),
+        ]
+        .into_iter()
+        .map(|(msg, h)| (msg, BigUint::from_str_radix(h, 16).unwrap().to_bytes_be()))
+        .collect::<Vec<_>>();
+
+        for (i, (msg, tgt)) in cases.into_iter().enumerate() {
+            assert_eq!(
+                tgt,
+                SHA256::digest(msg.as_bytes()).to_vec(),
+                "case {i} sha3-256sum failed"
+            );
+        }
     }
 }
