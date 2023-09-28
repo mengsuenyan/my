@@ -10,6 +10,7 @@ pub mod cshake;
 pub mod keccak;
 pub mod sha2;
 pub mod sha3;
+pub mod sm3;
 
 /// 哈希算法实现该trait, 计算消息的摘要. 可直接调用`Digest::digest(msg)`生成消息的摘要, 或者通过`Write` trait将数据更新
 /// 到`self`中后使用`self.finalize()`生成消息摘要.
