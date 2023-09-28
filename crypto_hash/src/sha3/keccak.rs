@@ -4,9 +4,10 @@ use std::io::Write;
 
 /// FIPS-202 Chapter 4, Chapter 5 <br>
 ///
-/// `Keccak[c] = Sponge[Keccak-p[1600,24], pad10*1, 1600-c]` <br>
+/// `Keccak[c](N,d) = Sponge[Keccak-p[1600,24], pad10*1, 1600-c](N,d)` <br>
 /// - b: 1600;
 /// - rounds: 24;
+/// - d: 输出hash值的位长度;
 #[derive(Clone)]
 pub struct SHA3<const RATE: usize, const OUTPUT_LEN: usize> {
     out: StateArray,
@@ -46,7 +47,8 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
         }
     }
 
-    pub(super) fn pad_fips202_xof(&mut self) {
+    // 在消息后补`1111`
+    pub(crate) fn pad_fips202_xof(&mut self) {
         let s = &mut self.buf;
         let r = s.len() % R;
         if r == R - 1 {
@@ -59,14 +61,28 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
         }
     }
 
+    // 在消息后补`00`
+    pub(crate) fn pad_sp800_cshake(&mut self) {
+        let r = self.buf.len() % R;
+        if r == R - 1 {
+            // 00100001
+            self.buf.push(0x84);
+        } else {
+            self.buf.push(0x04);
+            self.buf.resize(R - 1, 0);
+            self.buf.push(0x80);
+        }
+    }
+
+    // 在消息后补`11`
     pub(super) fn pad_fips202_rawxof(&mut self) {
         let s = &mut self.buf;
         let r = s.len() % R;
         if r == R - 1 {
             // 11100001
-            s.push(0x8e);
+            s.push(0x87);
         } else {
-            s.push(0x0e);
+            s.push(0x07);
             s.resize(R - 1, 0);
             s.push(0x80);
         }
@@ -99,7 +115,7 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
         }
     }
 
-    pub(super) fn finalize_inner(mut self, olen: usize) -> Output<Self> {
+    pub(crate) fn finalize_inner(mut self, olen: usize) -> Output<Self> {
         self.s2.update(self.buf.as_slice(), Self::W);
         self.out ^= &self.s2;
 

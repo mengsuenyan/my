@@ -5,6 +5,7 @@ use std::io::Write;
 macro_rules! impl_fip202_shake {
     ($NAME: ident, $NAME_WRAPPER: ident, $INNER: ty, $PAD: ident, $DOC: meta) => {
         #[$DOC]
+        #[derive(Clone)]
         pub struct $NAME {
             sha: $INNER,
             olen: usize,
@@ -38,12 +39,6 @@ macro_rules! impl_fip202_shake {
                 self.olen
             }
 
-            fn digest(desired_len: usize, msg: &[u8]) -> Vec<u8> {
-                let mut sha = Self::new(desired_len);
-                sha.write_all(msg).unwrap();
-                sha.finalize()
-            }
-
             fn finalize(mut self) -> Vec<u8> {
                 let l = self.desired_len();
                 // self.sha.pad_fips202_xof();
@@ -51,13 +46,13 @@ macro_rules! impl_fip202_shake {
                 self.sha.finalize_inner(l).to_vec()
             }
 
-            fn reset(&mut self, desired_len: usize) {
+            fn reset(&mut self) {
                 self.sha.reset();
-                self.olen = desired_len;
             }
         }
 
         /// `N`摘要字节数
+        #[derive(Clone)]
         pub struct $NAME_WRAPPER<const N: usize> {
             sha: $NAME,
         }
@@ -93,7 +88,7 @@ macro_rules! impl_fip202_shake {
             }
 
             fn reset(&mut self) {
-                self.sha.reset(N)
+                self.sha.reset()
             }
         }
     };
