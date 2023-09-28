@@ -17,6 +17,7 @@ macro_rules! impl_fips202_hash {
         use std::marker::PhantomData;
 
         #[$DOC]
+        #[derive(Clone)]
         pub struct $NAME {
             sha: $INNER,
         }

@@ -6,6 +6,7 @@ pub use output::Output;
 mod error;
 pub use error::HashError;
 
+pub mod cshake;
 pub mod keccak;
 pub mod sha2;
 pub mod sha3;
@@ -43,9 +44,7 @@ pub trait XOF: Write {
     // 期望输出摘要的字节大小
     fn desired_len(&self) -> usize;
 
-    fn digest(desired_len: usize, msg: &[u8]) -> Vec<u8>;
-
     fn finalize(self) -> Vec<u8>;
 
-    fn reset(&mut self, desired_len: usize);
+    fn reset(&mut self);
 }
