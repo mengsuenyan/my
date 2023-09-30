@@ -2,6 +2,7 @@ use crate::{BlockDecrypt, BlockEncrypt, CipherError};
 use utils::Block;
 
 /// [sm4](http://www.gmbz.org.cn/main/viewfile/20180108015408199368.html)
+#[derive(Clone)]
 pub struct SM4 {
     rk: [u32; 32],
 }
