@@ -123,3 +123,5 @@ where
 pub trait StreamCipher: StreamEncrypt + StreamDecrypt {}
 
 impl<T: StreamEncrypt + StreamDecrypt> StreamCipher for T {}
+
+pub mod zuc;
