@@ -13,8 +13,7 @@ impl Base16 {
 
     /// 指定缓存大小
     pub fn with_capacity(cap: usize) -> Self {
-        let mut x = vec![];
-        x.resize(cap.max(128), 0);
+        let x = vec![0; cap.max(128)];
         Self { buf: x }
     }
 }

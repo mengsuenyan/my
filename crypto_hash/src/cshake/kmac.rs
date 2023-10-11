@@ -35,7 +35,7 @@ macro_rules! impl_kmac {
                 self.cshake.desired_len()
             }
 
-            fn finalize(mut self) -> Vec<u8> {
+            fn finalize(&mut self) -> Vec<u8> {
                 let lf = $ST;
                 CSHAKE::<R>::right_encode(lf(&self), &mut self.cshake).unwrap();
                 self.cshake.finalize()

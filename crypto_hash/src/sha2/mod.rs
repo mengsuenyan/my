@@ -65,6 +65,7 @@ macro_rules! sha_common {
             idx: usize,
             // 记录已写入数据的总长度
             len: usize,
+            is_finalize: bool,
         }
 
         impl $NAME {
@@ -86,6 +87,7 @@ macro_rules! sha_common {
                     buf: [0; $NAME::BLOCK_SIZE],
                     idx: 0,
                     len: 0,
+                    is_finalize: false,
                 }
             }
         }
@@ -106,6 +108,9 @@ macro_rules! sha_common {
 
         impl Write for $NAME {
             fn write(&mut self, mut data: &[u8]) -> std::io::Result<usize> {
+                if self.is_finalize {
+                    self.reset();
+                }
                 let data_len = data.len();
 
                 if self.idx > 0 {
@@ -152,7 +157,12 @@ macro_rules! sha_common {
                 sha.finalize()
             }
 
-            fn finalize(mut self) -> Output<Self> {
+            fn finalize(&mut self) -> Output<Self> {
+                if self.is_finalize {
+                    return crate::Output::from_vec(
+                        self.digest.iter().flat_map(|x| x.to_be_bytes()).collect(),
+                    );
+                }
                 let mut padding = [0u8; Self::BLOCK_SIZE];
                 padding[0] = 0x80;
                 // 数据长度填充为$DATA_PADDING_BYTES * 8位的整数倍
@@ -174,13 +184,8 @@ macro_rules! sha_common {
                 )
                 .unwrap();
 
-                let mut v = Vec::with_capacity(Self::BLOCK_SIZE);
-                self.digest.iter().for_each(|d| v.extend(d.to_be_bytes()));
-
-                #[cfg(feature = "sec-zeroize")]
-                self.zeroize();
-
-                crate::Output::from_vec(v)
+                self.is_finalize = true;
+                crate::Output::from_vec(self.digest.iter().flat_map(|x| x.to_be_bytes()).collect())
             }
 
             fn reset(&mut self) {
@@ -235,7 +240,7 @@ macro_rules! sha_common {
                 sha.finalize()
             }
 
-            fn finalize(self) -> Output<Self> {
+            fn finalize(&mut self) -> Output<Self> {
                 let mut v = self.sha.finalize().to_vec();
                 v.truncate($DIGEST_BITS / 8);
                 Output::from_vec(v)

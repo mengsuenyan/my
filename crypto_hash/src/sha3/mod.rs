@@ -64,7 +64,7 @@ macro_rules! impl_fips202_hash {
                 <$INNER>::digest(msg).into()
             }
 
-            fn finalize(self) -> Output<Self> {
+            fn finalize(&mut self) -> Output<Self> {
                 self.sha.finalize().into()
             }
 

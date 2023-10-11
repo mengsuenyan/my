@@ -39,7 +39,7 @@ macro_rules! impl_fip202_shake {
                 self.olen
             }
 
-            fn finalize(mut self) -> Vec<u8> {
+            fn finalize(&mut self) -> Vec<u8> {
                 let l = self.desired_len();
                 // self.sha.pad_fips202_xof();
                 self.sha.$PAD();
@@ -83,7 +83,7 @@ macro_rules! impl_fip202_shake {
                 sha.write_all(msg).unwrap();
                 Output::from_vec(sha.finalize())
             }
-            fn finalize(self) -> Output<Self> {
+            fn finalize(&mut self) -> Output<Self> {
                 Output::from_vec(self.sha.finalize().to_vec())
             }
 

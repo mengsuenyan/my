@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 
 /// 消息哈希摘要输出。 按书写顺序存储, 即大端序.
 #[derive(Clone, Debug)]
-pub struct Output<T> {
+pub struct Output<T: ?Sized> {
     // Output是由哈希算法生成, 由实现算法保证`self.len() == Self::bytes()`
     pub(crate) data: Vec<u8>,
     pub(crate) digest: PhantomData<T>,
