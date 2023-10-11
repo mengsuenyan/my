@@ -8,12 +8,12 @@ pub struct SM3 {
     digest: [u32; Self::DIGEST_WSIZE],
     buf: Vec<u8>,
     len: usize,
+    is_finalize: bool,
 }
 
 impl SM3 {
     const BLOCK_SIZE: usize = Self::BLOCK_BITS >> 3;
     const WORD_SIZE: usize = Self::WORD_BITS >> 3;
-    const DIGEST_SIZE: usize = Self::DIGEST_BITS >> 3;
     const DIGEST_WSIZE: usize = Self::DIGEST_BITS / Self::WORD_BITS;
     const IV: [u32; Self::DIGEST_WSIZE] = [
         0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d,
@@ -25,6 +25,7 @@ impl SM3 {
             digest: Self::IV,
             buf: Vec::with_capacity(Self::BLOCK_SIZE),
             len: 0,
+            is_finalize: false,
         }
     }
 
@@ -133,6 +134,10 @@ impl Default for SM3 {
 
 impl Write for SM3 {
     fn write(&mut self, mut data: &[u8]) -> std::io::Result<usize> {
+        if self.is_finalize {
+            self.reset();
+        }
+
         let data_len = data.len();
 
         if !self.buf.is_empty() {
@@ -168,7 +173,16 @@ impl Digest for SM3 {
         sm3.finalize()
     }
 
-    fn finalize(mut self) -> Output<Self> {
+    fn finalize(&mut self) -> Output<Self> {
+        if self.is_finalize {
+            return Output::from_vec(
+                self.digest
+                    .iter()
+                    .flat_map(|x| x.to_be_bytes())
+                    .collect::<Vec<_>>(),
+            );
+        }
+
         let mut tmp = [0u8; Self::BLOCK_SIZE];
         tmp[0] = 0x80;
         let len = self.len;
@@ -184,15 +198,18 @@ impl Digest for SM3 {
         let len = (len as u64) << 3;
         self.write_all(len.to_be_bytes().as_ref()).unwrap();
 
-        let mut v = Vec::with_capacity(Self::DIGEST_SIZE);
-        self.digest
-            .into_iter()
-            .for_each(|x| v.extend(x.to_be_bytes()));
+        let v = self
+            .digest
+            .iter()
+            .flat_map(|x| x.to_be_bytes())
+            .collect::<Vec<_>>();
 
+        self.is_finalize = true;
         Output::from_vec(v)
     }
 
     fn reset(&mut self) {
+        self.is_finalize = false;
         self.len = 0;
         self.buf.clear();
         self.digest = [0; Self::DIGEST_WSIZE];

@@ -36,8 +36,7 @@ impl Base32 {
     /// 指定缓存大小
     pub fn with_capacity(cap: usize, is_std: bool) -> Self {
         let cap = cap + (5 - cap % 5);
-        let mut x = vec![];
-        x.resize(cap.max(200), 0);
+        let x = vec![0; cap.max(200)];
         Self {
             buf: x,
             table: if is_std {

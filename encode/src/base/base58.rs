@@ -51,8 +51,7 @@ impl Encode for Base58 {
         }
 
         let size = (data.len() - leading_zeros) * 138 / 100 + 1;
-        let mut b58 = vec![];
-        b58.resize(size, 0);
+        let mut b58 = vec![0; size];
 
         // b58 = 256 * b58 + ele
         for &ele in data.iter().skip(leading_zeros) {
@@ -102,8 +101,7 @@ impl Decode for Base58 {
 
         let mut len = 0;
         let leading_zeros = data.iter().take_while(|&&x| x == b'1').count();
-        let mut b256 = Vec::new();
-        b256.resize((data.len() - leading_zeros) * 733 / 1000 + 1, 0);
+        let mut b256 = vec![0; (data.len() - leading_zeros) * 733 / 1000 + 1];
 
         for &ele in data.iter().skip(leading_zeros) {
             let mut carry = Self::MAP_BASE58[ele as usize] as i32;

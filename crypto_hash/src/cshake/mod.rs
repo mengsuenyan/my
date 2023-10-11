@@ -132,7 +132,7 @@ impl<const R: usize> XOF for CSHAKE<R> {
         self.desired_len
     }
 
-    fn finalize(mut self) -> Vec<u8> {
+    fn finalize(&mut self) -> Vec<u8> {
         if self.is_shake {
             self.sha3.pad_fips202_xof();
         } else {

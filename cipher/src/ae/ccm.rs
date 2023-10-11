@@ -1,5 +1,6 @@
 use crate::block_cipher::{BlockCipher, AES, AES128, AES192, AES256};
 use crate::{AuthenticationCipher, BlockEncrypt, CipherError};
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 
 /// # Recommendation for Block Cipher Modes of Operation: The CCM Mode for Authentication and Confidentiality
@@ -328,8 +329,14 @@ where
 
         if tgt != mac {
             let (mac_tgt, mac) = (
-                tgt.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
-                mac.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
+                tgt.iter().fold(String::default(), |mut x, y| {
+                    write!(&mut x, "{:02x}", y).unwrap();
+                    x
+                }),
+                mac.iter().fold(String::default(), |mut x, y| {
+                    write!(&mut x, "{:02x}", y).unwrap();
+                    x
+                }),
             );
 
             Err(CipherError::AEError(format!(

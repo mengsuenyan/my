@@ -353,7 +353,9 @@ version = "0.2.4"
 dependencies = [
  "anyhow",
  "chrono",
+ "cipher",
  "clap",
+ "crypto_hash",
  "encode",
  "env_logger",
  "home",

@@ -4,6 +4,7 @@ use crate::{
     AuthenticationCipher, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt,
     StreamEncrypt,
 };
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use utils::Block;
 
@@ -278,11 +279,16 @@ where
         let _ = self.g_ctr(j0, None, h, s.as_slice(), &mut buf.as_mut_slice())?;
         if mac != &buf[..self.mac_size] {
             let (mac_tgt, mac) = (
-                mac.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
+                mac.iter().fold(String::default(), |mut x, y| {
+                    write!(&mut x, "{:02x}", y).unwrap();
+                    x
+                }),
                 buf.into_iter()
                     .take(self.mac_size)
-                    .map(|x| format!("{:02x}", x))
-                    .collect::<String>(),
+                    .fold(String::default(), |mut x, y| {
+                        write!(&mut x, "{:02x}", y).unwrap();
+                        x
+                    }),
             );
 
             return Err(CipherError::AEError(format!(
@@ -581,14 +587,16 @@ where
                 .g_ctr(sf.j0, None, sf.h, s.as_slice(), &mut buf.as_mut_slice())?;
             if mac_tgt != &buf[..sf.mac_size()] {
                 let (mac_tgt, mac) = (
-                    mac_tgt
-                        .iter()
-                        .map(|x| format!("{:02x}", x))
-                        .collect::<String>(),
+                    mac_tgt.iter().fold(String::default(), |mut x, y| {
+                        write!(&mut x, "{:02x}", y).unwrap();
+                        x
+                    }),
                     buf.into_iter()
                         .take(sf.mac_size())
-                        .map(|x| format!("{:02x}", x))
-                        .collect::<String>(),
+                        .fold(String::default(), |mut x, y| {
+                            write!(&mut x, "{:02x}", y).unwrap();
+                            x
+                        }),
                 );
 
                 return Err(CipherError::AEError(format!(

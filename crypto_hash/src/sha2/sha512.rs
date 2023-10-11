@@ -222,7 +222,7 @@ impl<const DIGEST_BYTES: usize> Digest for SHA512t<DIGEST_BYTES> {
         sha.finalize()
     }
 
-    fn finalize(self) -> Output<Self> {
+    fn finalize(&mut self) -> Output<Self> {
         let mut digest = self.sha.finalize().to_vec();
         digest.truncate(DIGEST_BYTES);
         Output::from_vec(digest)

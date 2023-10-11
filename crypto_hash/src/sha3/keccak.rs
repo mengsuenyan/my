@@ -13,6 +13,7 @@ pub struct SHA3<const RATE: usize, const OUTPUT_LEN: usize> {
     out: StateArray,
     buf: Vec<u8>,
     s2: StateArray,
+    is_finalize: bool,
 }
 
 impl<const R: usize, const O: usize> SHA3<R, O> {
@@ -29,6 +30,7 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
             out: StateArray::const_default(Self::W),
             buf: Vec::with_capacity(R),
             s2: StateArray::const_default(Self::W),
+            is_finalize: false,
         }
     }
 
@@ -115,7 +117,11 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
         }
     }
 
-    pub(crate) fn finalize_inner(mut self, olen: usize) -> Output<Self> {
+    pub(crate) fn finalize_inner(&mut self, olen: usize) -> Output<Self> {
+        if self.is_finalize {
+            return Output::from_vec(self.buf.iter().take(olen).copied().collect::<Vec<_>>());
+        }
+
         self.s2.update(self.buf.as_slice(), Self::W);
         self.out ^= &self.s2;
 
@@ -131,8 +137,8 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
             self.buf.truncate(l + R);
         }
 
-        self.buf.truncate(olen);
-        Output::from_vec(self.buf)
+        self.is_finalize = true;
+        Output::from_vec(self.buf.iter().take(olen).copied().collect::<Vec<_>>())
     }
 }
 
@@ -144,6 +150,10 @@ impl<const R: usize, const O: usize> Default for SHA3<R, O> {
 
 impl<const R: usize, const O: usize> Write for SHA3<R, O> {
     fn write(&mut self, mut s: &[u8]) -> std::io::Result<usize> {
+        if self.is_finalize {
+            self.reset();
+        }
+
         let slen = s.len();
 
         if !self.buf.is_empty() {
@@ -182,7 +192,7 @@ impl<const R: usize, const O: usize> Digest for SHA3<R, O> {
         sha.finalize()
     }
 
-    fn finalize(mut self) -> Output<Self> {
+    fn finalize(&mut self) -> Output<Self> {
         self.pad_fips202_hash();
         self.finalize_inner(O)
     }
@@ -190,5 +200,6 @@ impl<const R: usize, const O: usize> Digest for SHA3<R, O> {
     fn reset(&mut self) {
         self.out = StateArray::const_default(Self::W);
         self.buf.clear();
+        self.is_finalize = false;
     }
 }
