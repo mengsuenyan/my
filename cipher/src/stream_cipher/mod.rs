@@ -124,4 +124,71 @@ pub trait StreamCipher: StreamEncrypt + StreamDecrypt {}
 
 impl<T: StreamEncrypt + StreamDecrypt> StreamCipher for T {}
 
+pub trait StreamEncryptX {
+    fn stream_encrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
+
+    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError>;
+}
+
+pub trait StreamDecryptX {
+    fn stream_decrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
+    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError>;
+}
+
+pub trait StreamCipherX: StreamEncryptX + StreamDecryptX {}
+
+impl<T> StreamCipherX for T where T: StreamEncryptX + StreamDecryptX {}
+
+impl<T> StreamEncryptX for T
+where
+    T: StreamEncrypt,
+{
+    fn stream_encrypt_x(
+        &mut self,
+        mut in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        let x = self.stream_encrypt(&mut in_data, out_data)?;
+        Ok((x.read_len(), x.write_len()))
+    }
+
+    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError> {
+        let mut empty = [0u8; 0].as_slice();
+        let x = self.stream_encrypt(&mut empty, out_data)?;
+        let len = (x.read_len(), x.write_len());
+        let x = x.finish(out_data)?;
+        Ok((x.0 + len.0, x.1 + len.1))
+    }
+}
+
+impl<T> StreamDecryptX for T
+where
+    T: StreamDecrypt,
+{
+    fn stream_decrypt_x(
+        &mut self,
+        mut in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        let x = self.stream_decrypt(&mut in_data, out_data)?;
+        Ok((x.read_len(), x.write_len()))
+    }
+
+    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError> {
+        let mut empty = [0u8; 0].as_slice();
+        let x = self.stream_decrypt(&mut empty, out_data)?;
+        let len = (x.read_len(), x.write_len());
+        let x = x.finish(out_data)?;
+        Ok((x.0 + len.0, x.1 + len.1))
+    }
+}
+
 pub mod zuc;

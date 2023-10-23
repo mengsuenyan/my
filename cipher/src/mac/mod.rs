@@ -20,6 +20,33 @@ pub trait MAC: Write {
     fn reset(&mut self);
 }
 
+pub trait MACx: Write {
+    fn block_size_x(&self) -> usize;
+    fn digest_size_x(&self) -> usize;
+
+    fn mac(&mut self) -> Vec<u8>;
+
+    fn reset(&mut self);
+}
+
+impl<T> MACx for T
+where
+    T: MAC,
+{
+    fn block_size_x(&self) -> usize {
+        Self::BLOCK_SIZE
+    }
+    fn digest_size_x(&self) -> usize {
+        Self::DIGEST_SIZE
+    }
+    fn mac(&mut self) -> Vec<u8> {
+        self.mac()
+    }
+    fn reset(&mut self) {
+        self.reset()
+    }
+}
+
 mod cmac;
 pub use cmac::CMAC;
 
