@@ -32,6 +32,54 @@ pub trait AuthenticationCipher {
     ) -> Result<(usize, usize), CipherError>;
 }
 
+pub trait AuthenticationCipherX {
+    fn mac_size_x(&self) -> usize;
+
+    fn auth_encrypt_x(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
+    fn auth_decrypt_x(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
+}
+
+impl<T> AuthenticationCipherX for T
+where
+    T: AuthenticationCipher,
+{
+    fn mac_size_x(&self) -> usize {
+        self.mac_size()
+    }
+
+    fn auth_encrypt_x(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        mut in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.auth_encrypt(nonce, associated_data, &mut in_data, out_data)
+    }
+
+    fn auth_decrypt_x(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        mut in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.auth_decrypt(nonce, associated_data, &mut in_data, out_data)
+    }
+}
+
 mod ccm;
 pub use ccm::{AES128Ccm, AES192Ccm, AES256Ccm, AESCcm, CCM};
 
