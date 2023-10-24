@@ -38,7 +38,7 @@ pub trait Digest: Write {
     fn reset(&mut self);
 }
 
-pub trait DigestX {
+pub trait DigestX: Write {
     fn block_bits_x(&self) -> usize;
     fn word_bits_x(&self) -> usize;
     fn digest_bits_x(&self) -> usize;
