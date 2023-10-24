@@ -1,9 +1,7 @@
-use chrono::{DateTime, Local};
 use clap::{Arg, ArgAction, Command};
 use log::LevelFilter;
 use my::cmd::{Cmd, EncCmd, GitCmd, MyFsCmd, TokeiCmd};
 use std::io::Read;
-use std::time::SystemTime;
 
 fn main() {
     env_logger::builder()
@@ -11,11 +9,7 @@ fn main() {
         .parse_default_env()
         .init();
 
-    let version = format!(
-        "{}-{}",
-        clap::crate_version!(),
-        DateTime::<Local>::from(SystemTime::now()).format("%Y/%m/%d-%H:%M:%S:%Z")
-    );
+    let version = env!("MY_VERSION_INFO");
     let app = Command::new("my")
         .version(version)
         .about("my resource management")

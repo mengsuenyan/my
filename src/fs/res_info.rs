@@ -76,6 +76,27 @@ impl ResourceInfo {
         h.finish()
     }
 
+    pub fn is_file(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .map(|x| x.is_file())
+            .unwrap_or_default()
+    }
+
+    pub fn is_dir(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .map(|x| x.is_dir())
+            .unwrap_or_default()
+    }
+
+    pub fn is_symlink(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .map(|x| x.is_symlink())
+            .unwrap_or_default()
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
