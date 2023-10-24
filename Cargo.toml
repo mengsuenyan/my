@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "my"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.72"
 
@@ -35,3 +35,6 @@ home = { version = "0.5.5" }
 encode = {path = "./encode"}
 cipher = { path = "./cipher"}
 crypto_hash = { path = "./crypto_hash" }
+
+[build-dependencies]
+chrono = { version = "0.4.26", default-features = false, features = ["clock"]}
