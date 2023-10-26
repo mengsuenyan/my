@@ -153,6 +153,9 @@ pub type CSHAKE256 = CSHAKE<136>;
 mod kmac;
 pub use kmac::{KMACXof, KMACXof128, KMACXof256, KMAC, KMAC128, KMAC256};
 
+use crate::DigestX;
+impl_digestx_for_xof!(CSHAKE128, CSHAKE256);
+
 #[cfg(test)]
 mod tests {
     use crate::cshake::{CSHAKE128, CSHAKE256};

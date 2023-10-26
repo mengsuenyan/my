@@ -1,3 +1,4 @@
+use crate::{DigestX, HashError};
 use utils::Block;
 sha_common!(
     SHA512,
@@ -156,22 +157,27 @@ sha_common!(
     ]
 );
 
-/// `DIGEST_BYTES`指定消息摘要的字节数, 需要小于64. <br>
-///
-/// `SHA512T224`等价于`SHA512t<28>`, `SHA512T256`等价于`SHA512t<32>`, 但它们提供常量`new`方法.
 #[derive(Clone)]
-pub struct SHA512t<const DIGEST_BYTES: usize> {
+pub struct SHA512tInner {
     sha: SHA512,
+    len: usize,
 }
 
-impl<const DIGEST_BYTES: usize> SHA512t<DIGEST_BYTES> {
-    pub fn new() -> Self {
+impl SHA512tInner {
+    /// 指定输出摘要的字节长度`digest_len`
+    pub fn new(digest_len: usize) -> Result<Self, HashError> {
+        if digest_len == 0 || digest_len > 64 {
+            return Err(HashError::Other(
+                "Invalid digest byte lengths for the SHA512t".to_string(),
+            ));
+        }
+
         let mut init = SHA512::INIT;
         init.iter_mut().for_each(|d| {
             *d ^= 0xa5a5a5a5a5a5a5a5u64;
         });
         let mut sha = SHA512::new_with_init(init);
-        sha.write_all(format!("SHA-512/{}", Self::DIGEST_BITS).as_bytes())
+        sha.write_all(format!("SHA-512/{}", digest_len << 3).as_bytes())
             .unwrap();
         let digest = sha.finalize();
 
@@ -180,15 +186,85 @@ impl<const DIGEST_BYTES: usize> SHA512t<DIGEST_BYTES> {
             *w = u64::from_be_bytes(Block::to_arr_uncheck(chunk));
         }
 
-        Self {
+        Ok(Self {
             sha: SHA512::new_with_init(init),
+            len: digest_len,
+        })
+    }
+}
+
+impl Default for SHA512tInner {
+    fn default() -> Self {
+        Self {
+            sha: SHA512::new(),
+            len: SHA512::DIGEST_BITS >> 3,
+        }
+    }
+}
+
+#[cfg(feature = "sec-zeroize")]
+impl Zeroize for SHA512tInner {
+    fn zeroize(&mut self) {
+        self.sha.zeroize();
+        self.len = 0;
+    }
+}
+
+impl Write for SHA512tInner {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.sha.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.sha.flush()
+    }
+}
+
+impl DigestX for SHA512tInner {
+    fn block_bits_x(&self) -> usize {
+        SHA512::BLOCK_BITS
+    }
+
+    fn word_bits_x(&self) -> usize {
+        SHA512::WORD_BITS
+    }
+
+    fn digest_bits_x(&self) -> usize {
+        self.len << 3
+    }
+
+    fn finish_x(&mut self) -> Vec<u8> {
+        let mut digest = self.sha.finalize().to_vec();
+        digest.truncate(self.len);
+        digest
+    }
+
+    fn reset_x(&mut self) {
+        self.sha.reset()
+    }
+}
+
+/// `DIGEST_BYTES`指定消息摘要的字节数, 需要小于64. <br>
+///
+/// `SHA512T224`等价于`SHA512t<28>`, `SHA512T256`等价于`SHA512t<32>`, 但它们提供常量`new`方法.
+#[derive(Clone)]
+pub struct SHA512t<const DIGEST_BYTES: usize> {
+    sha: SHA512tInner,
+}
+
+impl<const DIGEST_BYTES: usize> SHA512t<DIGEST_BYTES> {
+    pub fn new() -> Self {
+        Self {
+            sha: SHA512tInner::new(DIGEST_BYTES).unwrap(),
         }
     }
 }
 
 impl<const DIGEST_BYTES: usize> Default for SHA512t<DIGEST_BYTES> {
     fn default() -> Self {
-        Self { sha: SHA512::new() }
+        Self {
+            sha: SHA512tInner::default(),
+        }
     }
 }
 
@@ -223,7 +299,7 @@ impl<const DIGEST_BYTES: usize> Digest for SHA512t<DIGEST_BYTES> {
     }
 
     fn finalize(&mut self) -> Output<Self> {
-        let mut digest = self.sha.finalize().to_vec();
+        let mut digest = self.sha.sha.finalize().to_vec();
         digest.truncate(DIGEST_BYTES);
         Output::from_vec(digest)
     }
