@@ -91,3 +91,6 @@ pub use shake::{
     RawSHAKE128, RawSHAKE128Wrapper, RawSHAKE256, RawSHAKE256Wrapper, SHAKE128Wrapper,
     SHAKE256Wrapper, SHAKE128, SHAKE256,
 };
+
+use crate::{DigestX, XOF};
+impl_digestx_for_xof!(SHAKE128, SHAKE256, RawSHAKE128, RawSHAKE256);

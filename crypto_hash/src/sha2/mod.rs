@@ -269,4 +269,5 @@ pub use sha1::SHA1;
 mod sha256;
 pub use sha256::{SHA224, SHA256};
 mod sha512;
+pub(crate) use sha512::SHA512tInner;
 pub use sha512::{SHA512t, SHA384, SHA512, SHA512T224, SHA512T256};

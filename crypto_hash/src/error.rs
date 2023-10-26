@@ -9,6 +9,7 @@ pub enum HashError {
     },
     Keccak(String),
     IoErr(std::io::Error),
+    Other(String),
 }
 
 impl Display for HashError {
@@ -19,6 +20,7 @@ impl Display for HashError {
             )),
             HashError::Keccak(s) => f.write_str(s.as_str()),
             HashError::IoErr(e) => f.write_fmt(format_args!("{}", e)),
+            HashError::Other(s) => f.write_str(s.as_str()),
         }
     }
 }
