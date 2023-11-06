@@ -40,6 +40,7 @@ impl SM4 {
     ];
 
     const BLOCK_SIZE: usize = 16;
+    const KEY_SIZE: usize = 16;
 
     #[inline]
     fn f_tau(x: u32) -> u32 {
@@ -95,7 +96,7 @@ impl SM4 {
         }
     }
 
-    pub fn new(key: [u8; Self::BLOCK_SIZE]) -> SM4 {
+    pub fn new(key: [u8; Self::KEY_SIZE]) -> SM4 {
         let mut mk = [0u32; 4];
         for (x, k) in mk.iter_mut().zip(key.chunks_exact(4)) {
             *x = u32::from_be_bytes(Block::to_arr_uncheck(k))
