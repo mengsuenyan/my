@@ -8,18 +8,18 @@ use std::convert::TryFrom;
 
 macro_rules! impl_hasher_type {
     ($NAME: ident, $([$ITEM: tt $(=$VAL: literal)?]),+) => {
-        #[repr(u64)]
+        #[repr(u32)]
         #[derive(Copy, Clone, Eq, PartialEq)]
         pub enum $NAME {
             $($ITEM $(=$VAL)?,)+
         }
 
-        impl TryFrom<u64> for $NAME {
+        impl TryFrom<u32> for $NAME {
             type Error = HashError;
 
-            fn try_from(value: u64) -> Result<Self, Self::Error> {
+            fn try_from(value: u32) -> Result<Self, Self::Error> {
                 match value {
-                    $(x if x == Self::$ITEM as u64 => Ok(Self::$ITEM),)+
+                    $(x if x == Self::$ITEM as u32 => Ok(Self::$ITEM),)+
                     _ => {Err(HashError::Other(format!("{} is not valid HasherType value", value)))},
                 }
             }
@@ -42,8 +42,8 @@ macro_rules! impl_hasher_type {
 
 impl_hasher_type!(
     HasherType,
-    [SM3 = 0x10_00000000],
-    [SHA1 = 0x20_00000000],
+    [SM3 = 0x10],
+    [SHA1 = 0x20],
     [SHA2_224],
     [SHA2_256],
     [SHA2_384],
@@ -51,7 +51,7 @@ impl_hasher_type!(
     [SHA2_512t],
     [SHA2_512T224],
     [SHA2_512T256],
-    [SHA3_224 = 0x30_00000000],
+    [SHA3_224 = 0x30],
     [SHA3_256],
     [SHA3_384],
     [SHA3_512],
@@ -99,7 +99,15 @@ impl HasherBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Box<dyn DigestX>, HashError> {
+    pub fn function_name(&self) -> Option<&[u8]> {
+        self.fuc_name.as_deref()
+    }
+
+    pub fn custom_info(&self) -> Option<&[u8]> {
+        self.custom.as_deref()
+    }
+
+    pub fn build(&self) -> Result<Box<dyn DigestX>, HashError> {
         let hasher: Box<dyn DigestX> = match self.hasher {
             HasherType::SM3 => {Box::new(SM3::new())},
             HasherType::SHA1 => {Box::new(sha2::SHA1::new())}
@@ -143,8 +151,8 @@ impl HasherBuilder {
 
     /// 摘要类型标识号
     pub fn flag(self) -> Result<u64, HashError> {
-        let x = self.hasher as u64;
+        let x = (self.hasher as u64) << 32;
         let h = self.build()?;
-        Ok(x | (h.digest_bits_x() as u64 >> 3))
+        Ok(x | h.digest_bits_x() as u64)
     }
 }
