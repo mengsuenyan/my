@@ -41,5 +41,7 @@ fn main() {
                 panic!("unsupport for {}", name)
             }
         }
+    } else {
+        println!("{} {}", env!("CARGO_PKG_NAME"), version);
     }
 }

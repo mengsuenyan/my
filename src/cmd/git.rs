@@ -415,6 +415,7 @@ impl Cmd for GitCmd {
                     .long("sleep")
                     .action(ArgAction::Set)
                     .value_parser(value_parser!(u64))
+                    .default_value("10")
                     .required(false)
                     .help("to specify the max sleep times"),
             )
@@ -451,6 +452,7 @@ impl Cmd for GitCmd {
                     .long("max-try")
                     .action(ArgAction::Set)
                     .required(false)
+                    .default_value("1")
                     .value_parser(value_parser!(usize))
                     .help("to specify the max try times when git operation failed"),
             )
@@ -601,7 +603,7 @@ impl Cmd for GitCmd {
             self.update_res_file(&r);
         }
 
-        let max_try = m.get_one::<usize>("max-try").copied().unwrap_or(7);
+        let max_try = m.get_one::<usize>("max-try").copied().unwrap_or(1);
         if let Some(lvl) = m.get_one::<usize>("update").copied() {
             let r = self.update_cmd(&path, lvl, max_try);
             println!("{}", r);

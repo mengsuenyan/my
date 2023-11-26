@@ -64,3 +64,46 @@ impl_cipher_type!(
     [CTR],
     [ZUC]
 );
+
+#[derive(Clone)]
+pub struct CipherBuilder {
+    block_cipher_type: BlockCipherType,
+    cipher_type: Option<CipherType>,
+    padding_type: Option<PaddingType>,
+    counter_type: Option<CounterType>,
+}
+
+impl CipherBuilder {
+    pub fn new(block_cipher_type: BlockCipherType) -> Self {
+        Self {
+            block_cipher_type,
+            cipher_type: None,
+            padding_type: None,
+            counter_type: None,
+        }
+    }
+
+    pub fn key_size(&self) -> usize {
+        match self.block_cipher_type {
+            BlockCipherType::SM4 => {128 / 8}
+            BlockCipherType::AES128 => {128 / 8}
+            BlockCipherType::AES192 => {192 / 8}
+            BlockCipherType::AES256 => {256 / 8}
+        }
+    }
+
+    pub fn cipher_type(mut self, cipher_type: CipherType) -> Self {
+        self.cipher_type = Some(cipher_type);
+        self
+    }
+
+    pub fn padding_type(mut self, padding_type: PaddingType) -> Self {
+        self.padding_type = Some(padding_type);
+        self
+    }
+
+    pub fn counter_type(mut self, counter_type: CounterType) -> Self {
+        self.counter_type = Some(counter_type);
+        self
+    }
+}
