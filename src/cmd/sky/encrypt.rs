@@ -334,15 +334,17 @@ impl SkyEncrypt {
         let h = self.digest.finish_x();
         header.set_digest(h);
 
-        let mut data = header.into_vec();
-
         if let Some(update_iv) = self.update_iv.as_ref() {
             self.iv_cshake.reset_x();
             self.iv_cshake.write_all(self.key.as_slice())?;
             self.iv_cshake.write_all(filename)?;
+            self.iv_cshake
+                .write_all(header.file_len.to_be_bytes().as_slice())?;
             let iv = self.iv_cshake.finish_x();
             update_iv(iv);
         }
+
+        let mut data = header.into_vec();
 
         let _x = self.cipher.stream_encrypt_x(in_data, &mut data)?;
         let _x = self.cipher.stream_encrypt_finish_x(&mut data)?;
@@ -358,6 +360,8 @@ impl SkyEncrypt {
             self.iv_cshake.reset_x();
             self.iv_cshake.write_all(self.key.as_slice())?;
             self.iv_cshake.write_all(header.file_name.as_slice())?;
+            self.iv_cshake
+                .write_all(header.file_len.to_be_bytes().as_slice())?;
             let iv = self.iv_cshake.finish_x();
             update_iv(iv);
         }
