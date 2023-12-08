@@ -35,7 +35,6 @@ impl Cmd for MyFsCmd {
                     .long("list")
                     .short('l')
                     .required(false)
-                    .default_value("true")
                     .action(ArgAction::SetTrue)
                     .help("list the specified directory"),
             )
@@ -83,15 +82,7 @@ impl Cmd for MyFsCmd {
             Err(e) => panic!("{}", e),
         };
 
-        let res = if m.get_flag("list") {
-            match m.get_one::<String>("type").map(|x| x.as_str()) {
-                Some("file") => res_info.list().filter(|x| x.is_file()),
-                Some("dir") => res_info.list().filter(|x| x.is_dir()),
-                Some("symlink") => res_info.list().filter(|x| x.is_symlink()),
-                Some(_) => res_info.list().filter(|_| false),
-                None => res_info.list(),
-            }
-        } else if m.get_flag("tree") {
+        let res = if m.get_flag("tree") {
             let filter: Box<dyn Fn(&Path) -> bool> =
                 match m.get_one::<String>("type").map(|s| s.as_str()) {
                     Some("file") => Box::new(|p| p.is_file()),
@@ -105,7 +96,14 @@ impl Cmd for MyFsCmd {
 
             res_info.tree_with_cond(level, filter, |_| true)
         } else {
-            unreachable!()
+            // --list
+            match m.get_one::<String>("type").map(|x| x.as_str()) {
+                Some("file") => res_info.list().filter(|x| x.is_file()),
+                Some("dir") => res_info.list().filter(|x| x.is_dir()),
+                Some("symlink") => res_info.list().filter(|x| x.is_symlink()),
+                Some(_) => res_info.list().filter(|_| false),
+                None => res_info.list(),
+            }
         };
 
         if m.get_flag("table") {
