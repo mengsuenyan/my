@@ -29,6 +29,7 @@ pub struct OFB<E, const BLOCK_SIZE: usize> {
     data: Vec<u8>,
     /// 初始化向量
     iv: Option<[u8; BLOCK_SIZE]>,
+    ivo: [u8; BLOCK_SIZE],
     cipher: E,
     is_encrypt: Option<bool>,
 }
@@ -45,7 +46,7 @@ impl<E, const N: usize> OFB<E, N> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
-        self.iv = None;
+        self.reset_iv();
     }
 
     fn check_iv(&self) -> Result<(), CipherError> {
@@ -79,6 +80,7 @@ impl<E, const N: usize> OFB<E, N> {
         Self {
             data: Vec::with_capacity(N),
             iv: Some(iv),
+            ivo: iv,
             cipher,
             is_encrypt: None,
         }
@@ -86,6 +88,11 @@ impl<E, const N: usize> OFB<E, N> {
 
     pub fn set_iv(&mut self, iv: [u8; N]) {
         self.iv = Some(iv);
+        self.ivo = iv;
+    }
+
+    fn reset_iv(&mut self) {
+        self.iv = Some(self.ivo);
     }
 }
 
