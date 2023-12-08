@@ -204,17 +204,18 @@ impl Cmd for SkyCmd {
                             continue;
                         }
 
-                        if !Self::read_file(p.path(), &mut data) {
+                        let Some(filename) = Self::read_file(p.path(), &mut data) else {
                             continue;
-                        }
-
-                        let content = match sky.crypt(data.as_slice(), is_decrypt) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                log::error!("`{}` crypt failed due to {e}", p.path().display());
-                                continue;
-                            }
                         };
+
+                        let content =
+                            match sky.crypt(data.as_slice(), filename.as_bytes(), is_decrypt) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("`{}` crypt failed due to {e}", p.path().display());
+                                    continue;
+                                }
+                            };
 
                         if Self::write_file(out_path, is_replace, content.as_slice()) {
                             log::info!(
@@ -233,22 +234,28 @@ impl Cmd for SkyCmd {
 }
 
 impl SkyCmd {
-    fn read_file(p: &Path, data: &mut Vec<u8>) -> bool {
+    fn read_file(p: &Path, data: &mut Vec<u8>) -> Option<String> {
         data.clear();
         match File::open(p) {
             Ok(mut f) => {
                 if let Err(e) = f.read_to_end(data) {
                     log::error!("read the file `{}` failed due to: {}", p.display(), e);
-                    return false;
+                    return None;
                 }
             }
             Err(e) => {
                 log::error!("open the file `{}` failed due to: {}", p.display(), e);
-                return false;
+                return None;
             }
         }
 
-        true
+        let filename = p
+            .file_name()
+            .and_then(|x| x.to_str().map(|y| y.to_string()));
+        if filename.is_none() {
+            log::error!("`{}` is not valid UTF-8 filename", p.display());
+        }
+        filename
     }
 
     fn output_path(p: &Path, mut in_path: PathBuf, mut out_path: PathBuf) -> Option<PathBuf> {
@@ -307,6 +314,7 @@ impl SkyCmd {
 
         match OpenOptions::new()
             .write(true)
+            .truncate(true)
             .create_new(!is_replace || !out_path.exists())
             .open(out_path.as_path())
         {

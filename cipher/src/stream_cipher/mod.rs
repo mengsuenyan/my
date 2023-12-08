@@ -2,6 +2,7 @@ use crate::{CipherError, Decrypt, Encrypt};
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
 type FinishFn<'a, T, W> = Box<dyn FnOnce(&'a mut T, &mut W) -> Result<usize, CipherError>>;
 
@@ -153,6 +154,29 @@ pub trait StreamCipherX: StreamEncryptX + StreamDecryptX {}
 
 impl<T> StreamCipherX for T where T: StreamEncryptX + StreamDecryptX {}
 
+impl<T> StreamEncryptX for Arc<Mutex<T>>
+where
+    T: StreamEncrypt,
+{
+    fn stream_encrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.lock()
+            .map_err(|e| CipherError::Other(format!("{e}")))?
+            .stream_encrypt_x(in_data, out_data)
+    }
+    fn stream_encrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.lock()
+            .map_err(|e| CipherError::Other(format!("{e}")))?
+            .stream_encrypt_finish_x(out_data)
+    }
+}
+
 impl<T> StreamEncryptX for T
 where
     T: StreamEncrypt,
@@ -175,6 +199,29 @@ where
         let len = (x.read_len(), x.write_len());
         let x = x.finish(out_data)?;
         Ok((x.0 + len.0, x.1 + len.1))
+    }
+}
+
+impl<T> StreamDecryptX for Arc<Mutex<T>>
+where
+    T: StreamDecrypt,
+{
+    fn stream_decrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.lock()
+            .map_err(|e| CipherError::Other(format!("{e}")))?
+            .stream_decrypt_x(in_data, out_data)
+    }
+    fn stream_decrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        self.lock()
+            .map_err(|e| CipherError::Other(format!("{e}")))?
+            .stream_decrypt_finish_x(out_data)
     }
 }
 
