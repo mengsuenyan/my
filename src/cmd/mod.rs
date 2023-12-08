@@ -47,3 +47,4 @@ mod pipe_data;
 pub use pipe_data::PipeDataCmd;
 
 pub mod sky;
+pub use sky::SkyCmd;

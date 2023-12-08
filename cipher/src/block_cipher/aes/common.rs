@@ -17,9 +17,9 @@ impl AES {
 
     pub fn new(key: &[u8]) -> Result<AES, CipherError> {
         match key.len() {
-            AES128::KEY_BYTES => AES::aes128(key).map(AES::AES128),
-            AES192::KEY_BYTES => AES::aes192(key).map(AES::AES192),
-            AES256::KEY_BYTES => AES::aes256(key).map(AES::AES256),
+            AES128::KEY_SIZE => AES::aes128(key).map(AES::AES128),
+            AES192::KEY_SIZE => AES::aes192(key).map(AES::AES192),
+            AES256::KEY_SIZE => AES::aes256(key).map(AES::AES256),
             _ => Err(CipherError::InvalidKeySize {
                 target: None,
                 real: key.len(),
@@ -46,7 +46,7 @@ impl AES {
     pub fn aes128(key: &[u8]) -> Result<AES128, CipherError> {
         match Block::to_arr(key) {
             None => Err(CipherError::InvalidKeySize {
-                target: Some(AES128::KEY_BYTES),
+                target: Some(AES128::KEY_SIZE),
                 real: key.len(),
             }),
             Some(key) => Ok(AES128::new(key)),
@@ -56,7 +56,7 @@ impl AES {
     pub fn aes192(key: &[u8]) -> Result<AES192, CipherError> {
         match Block::to_arr(key) {
             None => Err(CipherError::InvalidKeySize {
-                target: Some(AES128::KEY_BYTES),
+                target: Some(AES128::KEY_SIZE),
                 real: key.len(),
             }),
             Some(key) => Ok(AES192::new(key)),
@@ -66,7 +66,7 @@ impl AES {
     pub fn aes256(key: &[u8]) -> Result<AES256, CipherError> {
         match Block::to_arr(key) {
             None => Err(CipherError::InvalidKeySize {
-                target: Some(AES128::KEY_BYTES),
+                target: Some(AES128::KEY_SIZE),
                 real: key.len(),
             }),
             Some(key) => Ok(AES256::new(key)),

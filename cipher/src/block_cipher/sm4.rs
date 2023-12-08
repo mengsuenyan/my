@@ -40,7 +40,7 @@ impl SM4 {
     ];
 
     const BLOCK_SIZE: usize = 16;
-    const KEY_SIZE: usize = 16;
+    pub const KEY_SIZE: usize = 16;
 
     #[inline]
     fn f_tau(x: u32) -> u32 {

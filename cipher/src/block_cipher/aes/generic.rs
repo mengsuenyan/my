@@ -21,7 +21,7 @@ macro_rules! impl_aes {
             const KEY_BITS: usize = $KEY_BITS;
             // 字位长度
             const WORD_BITS: usize = 32;
-            pub(super) const KEY_BYTES: usize = Self::KEY_BITS / 8;
+            pub const KEY_SIZE: usize = Self::KEY_BITS / 8;
             // 密钥字长
             const NK: usize = Self::KEY_BITS / Self::WORD_BITS;
             // 加密轮数
@@ -29,14 +29,14 @@ macro_rules! impl_aes {
             // 密钥派生(KEY Schedule)后的密钥字长度
             const NK_EXPAND: usize = (Self::NR + 1) << 2;
 
-            pub fn new(key: [u8; Self::KEY_BYTES]) -> Self {
+            pub fn new(key: [u8; Self::KEY_SIZE]) -> Self {
                 let en_key = Self::new_encrypt(key);
                 let de_key = Self::new_decrypt(&en_key);
                 Self { en_key, de_key }
             }
 
             // 密钥扩展
-            fn new_encrypt(key: [u8; Self::KEY_BYTES]) -> [u32; Self::NK_EXPAND] {
+            fn new_encrypt(key: [u8; Self::KEY_SIZE]) -> [u32; Self::NK_EXPAND] {
                 let mut key_expand = [0u32; Self::NK_EXPAND];
 
                 for (k, chunk) in key_expand.iter_mut().zip(key.chunks_exact(4)) {

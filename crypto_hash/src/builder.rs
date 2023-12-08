@@ -14,6 +14,18 @@ macro_rules! impl_hasher_type {
             $($ITEM $(=$VAL)?,)+
         }
 
+        impl $NAME {
+            pub fn all_type_names() -> Vec<String> {
+                vec![$(stringify!($ITEM).replace("_", "-").to_lowercase(),)+]
+            }
+
+            pub fn name(self) -> String {
+                match self {
+                    $(Self::$ITEM => stringify!($ITEM).replace("_", "-").to_lowercase(),)+
+                }
+            }
+        }
+
         impl TryFrom<u32> for $NAME {
             type Error = HashError;
 
@@ -44,21 +56,21 @@ impl_hasher_type!(
     HasherType,
     [SM3 = 0x10],
     [SHA1 = 0x20],
-    [SHA2_224],
-    [SHA2_256],
-    [SHA2_384],
-    [SHA2_512],
-    [SHA2_512t],
-    [SHA2_512T224],
-    [SHA2_512T256],
+    [SHA2_224 = 0x21],
+    [SHA2_256 = 0x22],
+    [SHA2_384 = 0x23],
+    [SHA2_512 = 0x24],
+    [SHA2_512t = 0x25],
+    [SHA2_512T224 = 0x26],
+    [SHA2_512T256 = 0x27],
     [SHA3_224 = 0x30],
-    [SHA3_256],
-    [SHA3_384],
-    [SHA3_512],
-    [SHAKE128],
-    [SHAKE256],
-    [CSHAKE128],
-    [CSHAKE256]
+    [SHA3_256 = 0x31],
+    [SHA3_384 = 0x32],
+    [SHA3_512 = 0x33],
+    [SHAKE128 = 0x34],
+    [SHAKE256 = 0x35],
+    [CSHAKE128 = 0x36],
+    [CSHAKE256 = 0x37]
 );
 
 #[derive(Clone)]

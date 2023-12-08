@@ -1,14 +1,5 @@
-//!
-//! 起始头: 5字节
-//! 0x01 | 0x02 | 0x53 | 0x6b | 0x79
-//! 加密组件标识:
-//! 哈希函数: 4字节;
-//! 加密函数: 4字节;
-//! 密钥初始化向量派生类型: 4字节;
-//! 文件偏移地址: 4字节;
-//! 文件名
-//! 文件内容
-//!
+mod cmd;
+mod encrypt;
 
-mod hash;
-pub use hash::SkyHash;
+pub use cmd::SkyCmd;
+pub use encrypt::{SkyEncrypt, SkyEncryptPara};
