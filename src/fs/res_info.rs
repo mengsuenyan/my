@@ -90,6 +90,10 @@ impl ResourceInfo {
             .unwrap_or_default()
     }
 
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn is_symlink(&self) -> bool {
         self.metadata
             .as_ref()
@@ -306,6 +310,15 @@ impl Resources {
             }
         }
         res
+    }
+
+    /// 资源个数
+    pub fn nums(&self) -> usize {
+        self.res.len()
+    }
+
+    pub(crate) fn res_info(&self) -> &[Rc<ResourceInfo>] {
+        self.res.as_slice()
     }
 }
 

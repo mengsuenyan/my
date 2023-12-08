@@ -181,7 +181,6 @@ impl Cmd for ByteCmd {
                     .action(ArgAction::Set)
                     .default_value("str")
                     .value_parser(["str", "bin", "hex"])
-                    .required(true)
             )
     }
 

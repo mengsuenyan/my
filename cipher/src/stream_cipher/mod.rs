@@ -131,7 +131,10 @@ pub trait StreamEncryptX {
         out_data: &mut Vec<u8>,
     ) -> Result<(usize, usize), CipherError>;
 
-    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError>;
+    fn stream_encrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
 }
 
 pub trait StreamDecryptX {
@@ -140,7 +143,10 @@ pub trait StreamDecryptX {
         in_data: &[u8],
         out_data: &mut Vec<u8>,
     ) -> Result<(usize, usize), CipherError>;
-    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError>;
+    fn stream_decrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError>;
 }
 
 pub trait StreamCipherX: StreamEncryptX + StreamDecryptX {}
@@ -160,7 +166,10 @@ where
         Ok((x.read_len(), x.write_len()))
     }
 
-    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError> {
+    fn stream_encrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
         let mut empty = [0u8; 0].as_slice();
         let x = self.stream_encrypt(&mut empty, out_data)?;
         let len = (x.read_len(), x.write_len());
@@ -182,7 +191,10 @@ where
         Ok((x.read_len(), x.write_len()))
     }
 
-    fn finish_x(&mut self, out_data: &mut Vec<u8>) -> Result<(usize, usize), CipherError> {
+    fn stream_decrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
         let mut empty = [0u8; 0].as_slice();
         let x = self.stream_decrypt(&mut empty, out_data)?;
         let len = (x.read_len(), x.write_len());

@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "my"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.72"
 
@@ -20,6 +20,7 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+num_cpus = "1.16.0"
 anyhow = { version = "1.0.75" }
 thiserror = "1.0.47"
 log = "0.4.19"
@@ -35,6 +36,11 @@ home = { version = "0.5.5" }
 encode = {path = "./encode"}
 cipher = { path = "./cipher"}
 crypto_hash = { path = "./crypto_hash" }
+zeroize = { version = "1.6.0", optional = true}
+rpassword = "7.3.1"
 
 [build-dependencies]
 chrono = { version = "0.4.26", default-features = false, features = ["clock"]}
+
+[features]
+default = ["zeroize"]

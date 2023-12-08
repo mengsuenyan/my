@@ -107,7 +107,7 @@ impl_fip202_shake!(
     SHAKE256Wrapper,
     SHA3<136, 0>,
     pad_fips202_xof,
-    doc = r"`SHAKE128(M,d) = KECCAK[256](M || 1111, d)`"
+    doc = r"`SHAKE256(M,d) = KECCAK[512](M || 1111, d)`"
 );
 
 impl_fip202_shake!(

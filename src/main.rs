@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, Command};
 use log::LevelFilter;
-use my::cmd::{Cmd, EncCmd, GitCmd, MyFsCmd, TokeiCmd};
+use my::cmd::{Cmd, EncCmd, GitCmd, MyFsCmd, SkyCmd, TokeiCmd};
 use std::io::Read;
 
 fn main() {
@@ -24,6 +24,7 @@ fn main() {
         .subcommand(TokeiCmd::cmd())
         .subcommand(GitCmd::cmd())
         .subcommand(EncCmd::cmd())
+        .subcommand(SkyCmd::cmd())
         .get_matches();
 
     if let Some((s, m)) = app.subcommand() {
@@ -37,6 +38,7 @@ fn main() {
             TokeiCmd::NAME => TokeiCmd::new().run(m),
             GitCmd::NAME => GitCmd::new().unwrap().run(m),
             EncCmd::NAME => EncCmd::new(pipe_data).run(m),
+            SkyCmd::NAME => SkyCmd {}.run(m),
             name => {
                 panic!("unsupport for {}", name)
             }
