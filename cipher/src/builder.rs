@@ -4,11 +4,11 @@ use std::convert::TryFrom;
 use zeroize::Zeroize;
 
 macro_rules! impl_cipher_type {
-    ($NAME: ident, $REPR: ty, $([$ITEM: tt $(=$VAL: literal)?]),+) => {
+    ($NAME: ident, $REPR: ty, $([$ITEM: tt = $VAL: literal]),+) => {
         #[repr($REPR)]
         #[derive(Copy, Clone, Eq, PartialEq)]
         pub enum $NAME {
-            $($ITEM $(=$VAL)?,)+
+            $($ITEM =$VAL,)+
         }
 
         impl TryFrom<$REPR> for $NAME {
@@ -33,20 +33,6 @@ macro_rules! impl_cipher_type {
                 }
             }
         }
-
-        #[cfg(test)]
-        mod tests {
-            use super::$NAME;
-
-            #[test]
-            fn check_cipher_type_repeat() {
-                let mut x = [$($NAME::$ITEM as u64),+].to_vec();
-                x.sort();
-                let len1 = x.len();
-                x.dedup();
-                assert_eq!(len1, x.len());
-            }
-        }
     };
 }
 
@@ -59,7 +45,7 @@ impl_cipher_type!(
     [AES256 = 0x4]
 );
 
-impl_cipher_type!(PaddingType, u8, [Empty], [Default]);
+impl_cipher_type!(PaddingType, u8, [Empty = 0x0], [Default = 0x1]);
 
 impl_cipher_type!(CounterType, u8, [Default = 0x1]);
 
