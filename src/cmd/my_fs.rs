@@ -52,7 +52,6 @@ impl Cmd for MyFsCmd {
                     .long("lvl")
                     .required(false)
                     .action(ArgAction::Set)
-                    .default_value("1")
                     .value_parser(clap::value_parser!(usize))
                     .conflicts_with("list")
                     .help("specified the level for the tree"),
@@ -92,7 +91,7 @@ impl Cmd for MyFsCmd {
                     None => Box::new(|_| true),
                 };
 
-            let level = *m.get_one::<usize>("level").expect("tree level");
+            let level = m.get_one::<usize>("level").copied().unwrap_or(usize::MAX);
 
             res_info.tree_with_cond(level, filter, |_| true)
         } else {
