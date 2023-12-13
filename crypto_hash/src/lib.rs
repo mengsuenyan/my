@@ -42,7 +42,9 @@ pub mod sha2;
 pub mod sha3;
 pub mod sm3;
 
+pub mod blake;
 pub mod builder;
+
 pub use builder::{HasherBuilder, HasherType};
 
 /// 哈希算法实现该trait, 计算消息的摘要. 可直接调用`Digest::digest(msg)`生成消息的摘要, 或者通过`Write` trait将数据更新
