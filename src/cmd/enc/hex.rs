@@ -1,20 +1,143 @@
 //! 字节串转换为Hex串
 //!
 
+use super::SType;
 use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use num_bigint::BigInt;
+use num_traits::Num;
+use std::cell::Cell;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
+use std::io::{Error as StdIoErr, ErrorKind as StdIoErrKind};
 use std::path::PathBuf;
 
 #[derive(Clone, Default)]
 pub struct HexCmd {
     pipe_data: String,
+    is_0x: Cell<bool>,
+    is_reverse: Cell<bool>,
+    is_little_endian: Cell<bool>,
+    s_type: Cell<SType>,
 }
 
 impl HexCmd {
     pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+        Self {
+            pipe_data,
+            is_0x: Cell::new(false),
+            is_reverse: Cell::new(false),
+            is_little_endian: Cell::new(false),
+            s_type: Cell::new(SType::Str),
+        }
+    }
+
+    fn is_0x(&self, is_set: bool) -> &Self {
+        self.is_0x.set(is_set);
+        self
+    }
+
+    fn is_reverse(&self, is_set: bool) -> &Self {
+        self.is_reverse.set(is_set);
+        self
+    }
+
+    fn is_little_endian(&self, is_set: bool) -> &Self {
+        self.is_little_endian.set(is_set);
+        self
+    }
+
+    fn s_type(&self, s_type: SType) -> &Self {
+        self.s_type.set(s_type);
+        self
+    }
+
+    fn cvt_str(&self, stream: &mut Box<dyn Write>, s: &[u8]) -> Result<(), StdIoErr> {
+        if self.is_reverse.get() {
+            for &b in s.iter().rev() {
+                let b = if self.is_little_endian.get() {
+                    b.reverse_bits()
+                } else {
+                    b
+                };
+                write!(stream, "{:02x}", b)?;
+            }
+        } else {
+            for &b in s.iter() {
+                let b = if self.is_little_endian.get() {
+                    b.reverse_bits()
+                } else {
+                    b
+                };
+                write!(stream, "{:02x}", b)?;
+            }
+        }
+
+        Ok::<(), std::io::Error>(())
+    }
+
+    fn cvt_int(&self, stream: &mut Box<dyn Write>, s: &str) -> Result<(), StdIoErr> {
+        let n = BigInt::from_str_radix(s, 10)
+            .map_err(|e| StdIoErr::new(StdIoErrKind::Other, format!("{e}")))?;
+
+        if self.is_little_endian.get() {
+            let n = n.to_signed_bytes_le();
+            let n = BigInt::from_signed_bytes_be(n.as_slice());
+            write!(stream, "{:x}", n)
+        } else {
+            write!(stream, "{:x}", n)
+        }
+    }
+
+    fn cvt_f32(&self, stream: &mut Box<dyn Write>, s: &str) -> Result<(), StdIoErr> {
+        let s = s
+            .parse::<f32>()
+            .map_err(|e| StdIoErr::new(StdIoErrKind::Other, format!("{e}")))?
+            .to_be_bytes();
+
+        let s = if self.is_little_endian.get() {
+            u32::from_le_bytes(s)
+        } else {
+            u32::from_be_bytes(s)
+        };
+
+        write!(stream, "{:08x}", s)
+    }
+
+    fn cvt_f64(&self, stream: &mut Box<dyn Write>, s: &str) -> Result<(), StdIoErr> {
+        let s = s
+            .parse::<f64>()
+            .map_err(|e| StdIoErr::new(StdIoErrKind::Other, format!("{e}")))?
+            .to_be_bytes();
+
+        let s = if self.is_little_endian.get() {
+            u64::from_le_bytes(s)
+        } else {
+            u64::from_be_bytes(s)
+        };
+
+        write!(stream, "{:016x}", s)
+    }
+
+    fn cvt(&self, stream: &mut Box<dyn Write>, s: &[u8]) -> Result<(), StdIoErr> {
+        if self.is_0x.get() && !s.is_empty() {
+            write!(stream, "0x")?;
+        }
+
+        match self.s_type.get() {
+            SType::Str => self.cvt_str(stream, s),
+            x => {
+                let s = String::from_utf8(s.to_vec())
+                    .map_err(|e| StdIoErr::new(StdIoErrKind::Other, e))?;
+                if x == SType::F32 {
+                    self.cvt_f32(stream, s.as_str())
+                } else if x == SType::F64 {
+                    self.cvt_f64(stream, s.as_str())
+                } else {
+                    self.cvt_int(stream, s.as_str())
+                }
+            }
+        }
     }
 }
 
@@ -83,6 +206,15 @@ impl Cmd for HexCmd {
                     .required(false)
                     .help("Convert byte string from the end to start")
             )
+            .arg(
+                Arg::new("type")
+                    .long("type")
+                    .short('t')
+                    .action(ArgAction::Set)
+                    .default_value("str")
+                    .value_parser(["str", "int", "f32", "f64"])
+                    .help("to specify the byte string type")
+            )
     }
 
     fn run(&self, m: &ArgMatches) {
@@ -117,33 +249,14 @@ impl Cmd for HexCmd {
             None => Box::new(BufWriter::new(std::io::stdout().lock())),
         };
 
-        let cvt = move |stream: &mut Box<dyn Write>, s: &[u8]| {
-            if is_0x && !s.is_empty() {
-                write!(stream, "0x")?;
-            }
+        let s_type = m
+            .get_one::<String>("type")
+            .expect("need to specify the byte string type");
 
-            if is_reverse {
-                for &b in s.iter().rev() {
-                    let b = if is_little_endian {
-                        b.reverse_bits()
-                    } else {
-                        b
-                    };
-                    write!(stream, "{:02x}", b)?;
-                }
-            } else {
-                for &b in s.iter() {
-                    let b = if is_little_endian {
-                        b.reverse_bits()
-                    } else {
-                        b
-                    };
-                    write!(stream, "{:02x}", b)?;
-                }
-            }
-
-            Ok::<(), std::io::Error>(())
-        };
+        self.is_0x(is_0x)
+            .is_reverse(is_reverse)
+            .is_little_endian(is_little_endian)
+            .s_type(s_type.parse().unwrap());
 
         let pro_err = |x: std::io::Result<()>| {
             if let Err(e) = x {
@@ -156,18 +269,18 @@ impl Cmd for HexCmd {
         };
 
         if !self.pipe_data.is_empty() {
-            pro_err(cvt(&mut ostream, self.pipe_data.as_bytes()));
+            pro_err(self.cvt(&mut ostream, self.pipe_data.as_bytes()));
         }
 
         if let Some(s) = p_str {
-            pro_err(cvt(&mut ostream, s.as_bytes()));
+            pro_err(self.cvt(&mut ostream, s.as_bytes()));
         }
 
         if let Some(s) = input {
             let mut buf = vec![];
             let mut f = BufReader::new(File::open(s).unwrap());
             f.read_to_end(&mut buf).unwrap();
-            pro_err(cvt(&mut ostream, buf.as_slice()));
+            pro_err(self.cvt(&mut ostream, buf.as_slice()));
         }
 
         pro_err(ostream.flush());

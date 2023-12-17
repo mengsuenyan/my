@@ -121,7 +121,7 @@ impl Cmd for ByteCmd {
 
     fn cmd() -> Command {
         Command::new(Self::NAME)
-            .about("Convert a string convert to byte string")
+            .about("Convert a string to byte string")
             .arg(
                 Arg::new("str")
                     .value_name("STRING")
