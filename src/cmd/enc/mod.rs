@@ -1,5 +1,6 @@
 use crate::cmd::Cmd;
 use clap::{ArgMatches, Command};
+use std::str::FromStr;
 
 mod hex;
 use hex::HexCmd;
@@ -12,6 +13,29 @@ use byte::ByteCmd;
 
 mod base;
 use base::{Base16Cmd, Base32Cmd, Base58Cmd, Base64Cmd};
+
+#[derive(Copy, Clone, Eq, PartialEq, Default)]
+pub enum SType {
+    #[default]
+    Str,
+    Int,
+    F32,
+    F64,
+}
+
+impl FromStr for SType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "str" => Ok(Self::Str),
+            "int" => Ok(Self::Int),
+            "f32" => Ok(Self::F32),
+            "f64" => Ok(Self::F64),
+            _ => Err(format!("{s} is not valid type")),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct EncCmd {
