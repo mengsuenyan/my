@@ -129,7 +129,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crypto_hash",
+ "encode",
  "num-bigint",
+ "num-integer",
  "num-traits",
  "rand",
  "utils",

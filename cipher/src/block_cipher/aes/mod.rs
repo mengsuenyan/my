@@ -25,8 +25,7 @@ pub use generic::{AES128, AES192, AES256};
 #[cfg(test)]
 mod tests;
 
-use crate::{BlockDecrypt, BlockEncrypt, CipherError, Decrypt, Encrypt};
-use utils::Block;
+use crate::{BlockDecrypt, BlockEncrypt};
 
 macro_rules! impl_block_cipher {
     ($NAME: ident) => {
@@ -39,44 +38,6 @@ macro_rules! impl_block_cipher {
         impl BlockDecrypt<16> for $NAME {
             fn decrypt_block(&self, ciphertext: &[u8; 16]) -> [u8; 16] {
                 self.decrypt_block_inner(ciphertext)
-            }
-        }
-
-        impl Encrypt for $NAME {
-            fn encrypt(
-                &self,
-                plaintext: &[u8],
-                ciphertext: &mut Vec<u8>,
-            ) -> Result<(), CipherError> {
-                match Block::as_arr_ref(plaintext) {
-                    Some(block) => {
-                        ciphertext.extend(self.encrypt_block(block));
-                        Ok(())
-                    }
-                    None => Err(CipherError::InvalidBlockSize {
-                        target: 16,
-                        real: plaintext.len(),
-                    }),
-                }
-            }
-        }
-
-        impl Decrypt for $NAME {
-            fn decrypt(
-                &self,
-                ciphertext: &[u8],
-                plaintext: &mut Vec<u8>,
-            ) -> Result<(), CipherError> {
-                match Block::as_arr_ref(ciphertext) {
-                    Some(block) => {
-                        plaintext.extend(self.decrypt_block(block));
-                        Ok(())
-                    }
-                    None => Err(CipherError::InvalidBlockSize {
-                        target: 16,
-                        real: ciphertext.len(),
-                    }),
-                }
             }
         }
     };

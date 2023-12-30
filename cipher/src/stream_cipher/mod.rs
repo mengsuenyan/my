@@ -251,3 +251,5 @@ where
 }
 
 pub mod zuc;
+
+pub use crate::rsa::{OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptSteam, PKCS1EncryptStream};

@@ -17,8 +17,8 @@ pub trait BlockEncryptX {
 
     fn encrypt_block_x(
         &self,
-        ciphertext: &mut Vec<u8>,
         plaintext: &[u8],
+        ciphertext: &mut Vec<u8>,
     ) -> Result<(), CipherError>;
 }
 
@@ -27,8 +27,8 @@ pub trait BlockDecryptX {
 
     fn decrypt_block_x(
         &self,
-        plaintext: &mut Vec<u8>,
         ciphertext: &[u8],
+        plaintext: &mut Vec<u8>,
     ) -> Result<(), CipherError>;
 }
 
@@ -39,6 +39,7 @@ impl<T> BlockCipherX for T where T: BlockEncryptX + BlockDecryptX {}
 mod aes;
 pub use aes::{AES, AES128, AES192, AES256};
 mod sm4;
+pub use crate::rsa::{OAEPDecrypt, OAEPEncrypt, PKCS1Decrypt, PKCS1Encrypt};
 use crate::CipherError;
 pub use sm4::SM4;
 use utils::Block;
@@ -56,8 +57,8 @@ macro_rules! impl_block_cipher_x {
 
             fn encrypt_block_x(
                 &self,
-                ciphertext: &mut Vec<u8>,
                 plaintext: &[u8],
+                ciphertext: &mut Vec<u8>,
             ) -> Result<(), CipherError> {
                 if plaintext.len() != Self::BLOCK_SIZE {
                     return Err(CipherError::InvalidBlockSize {
@@ -80,8 +81,8 @@ macro_rules! impl_block_cipher_x {
 
             fn decrypt_block_x(
                 &self,
-                plaintext: &mut Vec<u8>,
                 ciphertext: &[u8],
+                plaintext: &mut Vec<u8>,
             ) -> Result<(), CipherError> {
                 if ciphertext.len() != Self::BLOCK_SIZE {
                     return Err(CipherError::InvalidBlockSize {
@@ -99,4 +100,44 @@ macro_rules! impl_block_cipher_x {
     };
 }
 
+macro_rules! impl_encrypt_trait_for_block_cipher {
+    ($NAME1: ty, $($NAME2: ty),+) => {
+        impl_encrypt_trait_for_block_cipher!($NAME1);
+        impl_encrypt_trait_for_block_cipher!($($NAME2),+);
+    };
+    ($NAME: ty) => {
+        impl crate::Encrypt for $NAME {
+            fn encrypt(
+                &self,
+                plaintext: &[u8],
+                ciphertext: &mut Vec<u8>,
+            ) -> Result<(), CipherError> {
+                self.encrypt_block_x(plaintext, ciphertext)
+            }
+        }
+    };
+}
+
+macro_rules! impl_decrypt_trait_for_block_cipher {
+    ($NAME1: ty, $($NAME2: ty),+) => {
+        impl_decrypt_trait_for_block_cipher!($NAME1);
+        impl_decrypt_trait_for_block_cipher!($($NAME2),+);
+    };
+    ($NAME: ty) => {
+        impl crate::Decrypt for $NAME {
+            fn decrypt(
+                &self,
+                ciphertext: &[u8],
+                plaintext: &mut Vec<u8>,
+            ) -> Result<(), CipherError> {
+                self.decrypt_block_x(ciphertext, plaintext)
+            }
+        }
+    };
+}
+
+// rust支持`impl<T, const N: usize> Encrypt for T where T: BlockEncrypt<N> {...}`之后
+// 修改为这种形式
 impl_block_cipher_x!(SM4, AES, AES128, AES192, AES256);
+impl_encrypt_trait_for_block_cipher!(SM4, AES, AES128, AES192, AES256);
+impl_decrypt_trait_for_block_cipher!(SM4, AES, AES128, AES192, AES256);
