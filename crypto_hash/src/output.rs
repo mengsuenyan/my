@@ -16,6 +16,10 @@ pub struct Output<T: ?Sized> {
 }
 
 impl<T> Output<T> {
+    pub fn iter(&self) -> std::slice::Iter<u8> {
+        self.data.iter()
+    }
+
     pub(crate) const fn from_vec(digest: Vec<u8>) -> Self {
         Self {
             data: digest,

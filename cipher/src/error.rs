@@ -34,6 +34,11 @@ pub enum CipherError {
         is_iv: bool,
     },
 
+    InvalidPublicKey(String),
+    InvalidPrivateKey(String),
+
+    ValidateFailed(String),
+
     NotSetCounter,
 
     AEError(String),
@@ -75,9 +80,12 @@ impl Display for CipherError {
                     ))
                 }
             }
-            CipherError::NotSetCounter => f.write_str("Not set Counter"),
-            CipherError::AEError(msg) => f.write_str(msg.as_str()),
-            CipherError::Other(other) => f.write_str(other.as_str()),
+            CipherError::NotSetCounter => f.write_str("NotSetCounter: Not set Counter"),
+            CipherError::AEError(msg) => write!(f, "AEError: {msg}"),
+            CipherError::Other(msg) => write!(f, "Other: {msg}"),
+            CipherError::InvalidPublicKey(msg) => write!(f, "InvalidPublicKey: {msg}"),
+            CipherError::InvalidPrivateKey(msg) => write!(f, "InvalidPrivateKey: {msg}"),
+            CipherError::ValidateFailed(msg) => write!(f, "ValidateFailed: {msg}"),
         }
     }
 }
