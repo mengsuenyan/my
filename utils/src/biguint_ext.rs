@@ -1,8 +1,8 @@
-use crate::utils::BigIntExt;
-use crate::{CipherError, Rand};
+use crate::BigIntExt;
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer;
 use num_traits::{Euclid, One, ToPrimitive, Zero};
+use rand::Rand;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Deref, Rem, RemAssign, Sub};
@@ -512,11 +512,9 @@ impl<T: Borrow<BigUint>> BigUintExt<T> {
         bits_len: usize,
         test_round_num: usize,
         rng: &mut Rng,
-    ) -> Result<BigUint, CipherError> {
+    ) -> Result<BigUint, String> {
         if bits_len < 2 {
-            return Err(CipherError::Other(
-                "prime size must at least 2-bits".to_string(),
-            ));
+            return Err("prime size must at least 2-bits".to_string());
         }
 
         const SMALL_PRIMES: [u8; 15] = [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
@@ -594,10 +592,10 @@ impl<T: Borrow<BigUint>> BigUintExt<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::DefaultRand;
-    use crate::utils::BigUintExt;
+    use crate::BigUintExt;
     use num_bigint::BigUint;
     use num_traits::Num;
+    use rand::DefaultRand;
     use std::time::Instant;
 
     #[test]

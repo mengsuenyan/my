@@ -279,7 +279,7 @@ impl SkyCmd {
             }
         };
 
-        if !in_path.is_file() {
+        if !in_path.is_file() && in_path != out_path {
             in_path.pop();
             let suffix = match p.strip_prefix(in_path) {
                 Ok(x) => x,

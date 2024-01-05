@@ -1,8 +1,7 @@
 mod error;
 pub use error::CipherError;
 
-pub mod rand;
-pub use rand::Rand;
+pub use rand::{DefaultRand, Rand};
 
 pub mod block_cipher;
 pub use block_cipher::{BlockCipher, BlockDecrypt, BlockEncrypt};
@@ -20,8 +19,8 @@ pub mod ae;
 pub use ae::AuthenticationCipher;
 
 pub mod builder;
+pub mod dss;
 pub mod rsa;
-pub mod utils;
 
 pub trait Encrypt {
     // 写入ciphertext之前不清空

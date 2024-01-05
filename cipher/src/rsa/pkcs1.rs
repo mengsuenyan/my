@@ -301,10 +301,10 @@ impl<R: Rand> Decrypt for PKCS1Decrypt<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::DefaultRand;
     use crate::rsa::{
         PKCS1Decrypt, PKCS1DecryptSteam, PKCS1Encrypt, PKCS1EncryptStream, PrivateKey,
     };
+    use crate::DefaultRand;
     use crate::{StreamDecrypt, StreamEncrypt};
     use encode::Decode;
     use num_bigint::BigUint;

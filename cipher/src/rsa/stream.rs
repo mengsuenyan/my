@@ -314,10 +314,10 @@ impl<R: Rand> StreamDecrypt for PKCS1DecryptSteam<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::DefaultRand;
     use crate::rsa::{
         OAEPDecrypt, OAEPDecryptStream, OAEPEncrypt, OAEPEncryptStream, PrivateKey, PublicKey,
     };
+    use crate::DefaultRand;
     use crate::{Rand, StreamDecrypt, StreamEncrypt};
     use crypto_hash::sha2::SHA1;
     use num_bigint::BigUint;
