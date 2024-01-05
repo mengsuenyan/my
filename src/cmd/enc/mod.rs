@@ -43,8 +43,10 @@ pub struct EncCmd {
 }
 
 impl EncCmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &str) -> Self {
+        Self {
+            pipe_data: pipe_data.to_string(),
+        }
     }
 }
 

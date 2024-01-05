@@ -325,3 +325,6 @@ mod blake2s;
 
 pub use blake2b::{BLAKE2b, BLAKE2b128, BLAKE2b224, BLAKE2b256, BLAKE2b384, BLAKE2b512};
 pub use blake2s::{BLAKE2s, BLAKE2s128, BLAKE2s224, BLAKE2s256};
+
+use crate::{DigestX, XOF};
+impl_digestx_for_xof!(BLAKE2s, BLAKE2b);
