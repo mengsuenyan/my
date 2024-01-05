@@ -6,6 +6,7 @@ members = [
     "utils",
     "encode",
     "rand",
+    "group",
 ]
 
 [package]

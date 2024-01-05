@@ -154,7 +154,39 @@ mod kmac;
 pub use kmac::{KMACXof, KMACXof128, KMACXof256, KMAC, KMAC128, KMAC256};
 
 use crate::DigestX;
-impl_digestx_for_xof!(CSHAKE128, CSHAKE256);
+
+macro_rules! impl_digestx_for_cshake {
+    ($TYPE: tt) => {
+        impl<const R: usize> DigestX for $TYPE<R> {
+            fn block_bits_x(&self) -> usize {
+                Self::BLOCK_BITS
+            }
+
+            fn word_bits_x(&self) -> usize {
+                Self::WORD_BITS
+            }
+
+            fn digest_bits_x(&self) -> usize {
+                self.desired_len() << 3
+            }
+
+            fn finish_x(&mut self) -> Vec<u8> {
+                <Self as XOF>::finalize(self)
+            }
+
+            fn reset_x(&mut self) {
+                <Self as XOF>::reset(self)
+            }
+        }
+    };
+
+    ($TYPE1: tt, $($TYPE2: tt),+) => {
+        impl_digestx_for_cshake!($TYPE1);
+        impl_digestx_for_cshake!($($TYPE2),+);
+    }
+}
+
+impl_digestx_for_cshake!(CSHAKE, KMAC, KMACXof);
 
 #[cfg(test)]
 mod tests {
