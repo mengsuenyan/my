@@ -374,8 +374,8 @@ impl<H: DigestX, R: Rand> Sign for PSSSign<H, R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::DefaultRand;
     use crate::rsa::{PSSSign, PSSVerify, PrivateKey, PublicKey};
+    use crate::DefaultRand;
     use crate::{Sign, Verify};
     use crypto_hash::sha2::{SHA1, SHA256};
     use num_bigint::BigUint;

@@ -82,7 +82,7 @@ impl<T: Borrow<BigInt>> BigIntExt<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::bigint_ext::BigIntExt;
+    use crate::BigIntExt;
     use num_bigint::BigInt;
     use num_traits::{Euclid, Num, One, Signed};
 

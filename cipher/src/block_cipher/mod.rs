@@ -92,7 +92,7 @@ macro_rules! impl_block_cipher_x {
                 }
 
                 let block = Block::as_arr_ref_uncheck(ciphertext);
-                plaintext.extend(self.encrypt_block(block));
+                plaintext.extend(self.decrypt_block(block));
 
                 Ok(())
             }

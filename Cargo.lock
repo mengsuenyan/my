@@ -133,7 +133,8 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "rand",
+ "rand 0.1.0",
+ "rand 0.8.5",
  "utils",
  "zeroize",
 ]
@@ -352,7 +353,7 @@ checksum = "76fc44e2588d5b436dbc3c6cf62aef290f90dab6235744a93dfe1cc18f451e2c"
 
 [[package]]
 name = "my"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -366,7 +367,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "num_cpus",
- "rand",
+ "rand 0.8.5",
  "regex",
  "rpassword",
  "serde",
@@ -385,7 +386,7 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
- "rand",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -451,6 +452,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rand"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -687,6 +695,10 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 name = "utils"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.1.0",
  "zeroize",
 ]
 

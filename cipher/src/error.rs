@@ -97,3 +97,9 @@ impl From<std::io::Error> for CipherError {
         Self::IOError(value)
     }
 }
+
+impl From<String> for CipherError {
+    fn from(value: String) -> Self {
+        Self::Other(value)
+    }
+}

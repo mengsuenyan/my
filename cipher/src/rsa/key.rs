@@ -1,10 +1,10 @@
 //! 参考notebook 'RSA密码学规范PKCS1_v_2_2.md'
-use crate::utils::{BigIntExt, BigUintExt};
 use crate::{CipherError, Rand};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{Euclid, One, Zero};
 use std::fmt::{Display, Formatter};
 use std::iter::{Chain, Once};
+use utils::{BigIntExt, BigUintExt};
 
 #[derive(Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
 pub struct PublicKey {
@@ -493,8 +493,8 @@ impl Display for PrivateKey {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::DefaultRand;
     use crate::rsa::key::PrivateKey;
+    use crate::DefaultRand;
     use num_bigint::BigUint;
     use num_traits::Num;
 
