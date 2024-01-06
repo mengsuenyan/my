@@ -52,3 +52,5 @@ pub use cmac::CMAC;
 
 mod hmac;
 pub use hmac::HMAC;
+
+pub use crate::stream_cipher::zuc::{ZUCMac, ZUCStdMac};
