@@ -4,7 +4,9 @@ pub use error::CipherError;
 pub use rand::{DefaultRand, Rand};
 
 pub mod block_cipher;
-pub use block_cipher::{BlockCipher, BlockDecrypt, BlockEncrypt};
+pub use block_cipher::{
+    BlockCipher, BlockCipherX, BlockDecrypt, BlockDecryptX, BlockEncrypt, BlockEncryptX,
+};
 
 pub mod stream_cipher;
 pub use stream_cipher::{StreamCipher, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
