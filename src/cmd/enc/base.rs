@@ -63,7 +63,7 @@ impl<T: Encode + Decode> Base<T> {
             )
     }
 
-    fn run(&mut self, m: &ArgMatches, pipe_data: Option<&str>) {
+    fn run(&mut self, m: &ArgMatches, pipe_data: Option<&[u8]>) {
         let (p_str, iname, oname, is_decode) = (
             m.get_one::<String>("str"),
             m.get_one::<PathBuf>("filename"),
@@ -90,8 +90,8 @@ impl<T: Encode + Decode> Base<T> {
             None => Box::new(BufWriter::new(std::io::stdout().lock())),
         };
 
-        if let Some(pipe_data) = pipe_data {
-            self.exe_base(&mut pipe_data.as_bytes(), &mut ostream, is_decode);
+        if let Some(mut pipe_data) = pipe_data {
+            self.exe_base(&mut pipe_data, &mut ostream, is_decode);
         }
 
         if let Some(p_str) = p_str {
@@ -114,12 +114,14 @@ impl<T: Encode + Decode> Base<T> {
 }
 
 pub struct Base16Cmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl Base16Cmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &[u8]) -> Self {
+        Self {
+            pipe_data: pipe_data.to_vec(),
+        }
     }
 }
 
@@ -133,17 +135,19 @@ impl Cmd for Base16Cmd {
     fn run(&self, m: &ArgMatches) {
         let mut base = Base::new(Base16::new());
 
-        base.run(m, Some(self.pipe_data.as_str()));
+        base.run(m, Some(self.pipe_data.as_slice()));
     }
 }
 
 pub struct Base32Cmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl Base32Cmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &[u8]) -> Self {
+        Self {
+            pipe_data: pipe_data.to_vec(),
+        }
     }
 }
 
@@ -163,17 +167,19 @@ impl Cmd for Base32Cmd {
     fn run(&self, m: &ArgMatches) {
         let mut base = Base::new(Base32::new(!m.get_flag("url")));
 
-        base.run(m, Some(self.pipe_data.as_str()));
+        base.run(m, Some(self.pipe_data.as_slice()));
     }
 }
 
 pub struct Base64Cmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl Base64Cmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &[u8]) -> Self {
+        Self {
+            pipe_data: pipe_data.to_vec(),
+        }
     }
 }
 
@@ -193,17 +199,19 @@ impl Cmd for Base64Cmd {
     fn run(&self, m: &ArgMatches) {
         let mut base = Base::new(Base64::new(!m.get_flag("url")));
 
-        base.run(m, Some(self.pipe_data.as_str()));
+        base.run(m, Some(self.pipe_data.as_slice()));
     }
 }
 
 pub struct Base58Cmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl Base58Cmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &[u8]) -> Self {
+        Self {
+            pipe_data: pipe_data.to_vec(),
+        }
     }
 }
 
@@ -217,6 +225,6 @@ impl Cmd for Base58Cmd {
     fn run(&self, m: &ArgMatches) {
         let mut base = Base::new(Base58::new());
 
-        base.run(m, Some(self.pipe_data.as_str()));
+        base.run(m, Some(self.pipe_data.as_slice()));
     }
 }
