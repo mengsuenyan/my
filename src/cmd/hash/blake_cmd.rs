@@ -46,7 +46,7 @@ macro_rules! impl_blake_cmd {
                 );
 
                 let h = <$HASH>::new_with_key((s >> 3) as u8, key).unwrap();
-                let d = common_run(h, self.pipe.as_str(), m);
+                let d = common_run(h, self.pipe.as_slice(), m);
 
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {

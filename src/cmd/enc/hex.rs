@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 #[derive(Clone, Default)]
 pub struct HexCmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
     is_0x: Cell<bool>,
     is_reverse: Cell<bool>,
     is_little_endian: Cell<bool>,
@@ -22,9 +22,9 @@ pub struct HexCmd {
 }
 
 impl HexCmd {
-    pub fn new(pipe_data: String) -> Self {
+    pub fn new(pipe_data: &[u8]) -> Self {
         Self {
-            pipe_data,
+            pipe_data: pipe_data.to_vec(),
             is_0x: Cell::new(false),
             is_reverse: Cell::new(false),
             is_little_endian: Cell::new(false),
@@ -269,7 +269,7 @@ impl Cmd for HexCmd {
         };
 
         if !self.pipe_data.is_empty() {
-            pro_err(self.cvt(&mut ostream, self.pipe_data.as_bytes()));
+            pro_err(self.cvt(&mut ostream, self.pipe_data.as_slice()));
         }
 
         if let Some(s) = p_str {

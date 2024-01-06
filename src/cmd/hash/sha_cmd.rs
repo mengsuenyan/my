@@ -34,7 +34,7 @@ macro_rules! impl_desired_len_hash {
                 );
 
                 let h = <$HASH>::new(s >> 3);
-                let d = common_run(h, self.pipe.as_str(), m);
+                let d = common_run(h, self.pipe.as_slice(), m);
 
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {
@@ -83,7 +83,7 @@ impl Cmd for SHA2_512tCmd {
         );
 
         let h = SHA512tInner::new(s >> 3).unwrap();
-        let d = common_run(h, self.pipe.as_str(), m);
+        let d = common_run(h, self.pipe.as_slice(), m);
 
         let d = BigUint::from_bytes_be(d.as_slice());
         if m.get_flag("prefix") {

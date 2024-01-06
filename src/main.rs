@@ -29,18 +29,18 @@ fn main() {
         .get_matches();
 
     if let Some((s, m)) = app.subcommand() {
-        let mut pipe_data = String::new();
+        let mut pdata = Vec::with_capacity(1024);
         if app.get_flag("pipe") {
-            std::io::stdin().read_to_string(&mut pipe_data).unwrap();
+            let _len = std::io::stdin().lock().read_to_end(&mut pdata).unwrap();
         }
 
         match s {
             MyFsCmd::NAME => MyFsCmd::new().run(m),
             TokeiCmd::NAME => TokeiCmd::new().run(m),
             GitCmd::NAME => GitCmd::new().unwrap().run(m),
-            EncCmd::NAME => EncCmd::new(pipe_data.as_str()).run(m),
+            EncCmd::NAME => EncCmd::new(pdata.as_slice()).run(m),
             SkyCmd::NAME => SkyCmd {}.run(m),
-            HashCmd::NAME => HashCmd::new(pipe_data.as_str()).run(m),
+            HashCmd::NAME => HashCmd::new(pdata.as_slice()).run(m),
             name => {
                 panic!("unsupport for {}", name)
             }

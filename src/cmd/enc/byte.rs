@@ -6,12 +6,14 @@ use std::path::PathBuf;
 
 #[derive(Clone, Default)]
 pub struct ByteCmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl ByteCmd {
-    pub fn new(pipe_data: String) -> Self {
-        Self { pipe_data }
+    pub fn new(pipe_data: &[u8]) -> Self {
+        Self {
+            pipe_data: pipe_data.to_vec(),
+        }
     }
 
     fn pro_bin(
@@ -250,7 +252,7 @@ impl Cmd for ByteCmd {
         };
 
         if !self.pipe_data.is_empty() {
-            pro_err(cvt(&mut ostream, self.pipe_data.as_bytes()));
+            pro_err(cvt(&mut ostream, self.pipe_data.as_slice()));
         }
 
         if let Some(s) = p_str {

@@ -39,13 +39,13 @@ impl FromStr for SType {
 
 #[derive(Clone)]
 pub struct EncCmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
 }
 
 impl EncCmd {
-    pub fn new(pipe_data: &str) -> Self {
+    pub fn new(pipe_data: &[u8]) -> Self {
         Self {
-            pipe_data: pipe_data.to_string(),
+            pipe_data: pipe_data.to_vec(),
         }
     }
 }
@@ -67,13 +67,13 @@ impl Cmd for EncCmd {
 
     fn run(&self, m: &ArgMatches) {
         match m.subcommand() {
-            Some((HexCmd::NAME, m)) => HexCmd::new(self.pipe_data.clone()).run(m),
-            Some((BinCmd::NAME, m)) => BinCmd::new(self.pipe_data.clone()).run(m),
-            Some((ByteCmd::NAME, m)) => ByteCmd::new(self.pipe_data.clone()).run(m),
-            Some((Base16Cmd::NAME, m)) => Base16Cmd::new(self.pipe_data.clone()).run(m),
-            Some((Base32Cmd::NAME, m)) => Base32Cmd::new(self.pipe_data.clone()).run(m),
-            Some((Base58Cmd::NAME, m)) => Base58Cmd::new(self.pipe_data.clone()).run(m),
-            Some((Base64Cmd::NAME, m)) => Base64Cmd::new(self.pipe_data.clone()).run(m),
+            Some((HexCmd::NAME, m)) => HexCmd::new(self.pipe_data.as_slice()).run(m),
+            Some((BinCmd::NAME, m)) => BinCmd::new(self.pipe_data.as_slice()).run(m),
+            Some((ByteCmd::NAME, m)) => ByteCmd::new(self.pipe_data.as_slice()).run(m),
+            Some((Base16Cmd::NAME, m)) => Base16Cmd::new(self.pipe_data.as_slice()).run(m),
+            Some((Base32Cmd::NAME, m)) => Base32Cmd::new(self.pipe_data.as_slice()).run(m),
+            Some((Base58Cmd::NAME, m)) => Base58Cmd::new(self.pipe_data.as_slice()).run(m),
+            Some((Base64Cmd::NAME, m)) => Base64Cmd::new(self.pipe_data.as_slice()).run(m),
             Some((name, _)) => {
                 unimplemented!("Unsupport encode command `{}`", name)
             }

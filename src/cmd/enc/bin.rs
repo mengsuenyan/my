@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 #[derive(Clone, Default)]
 pub struct BinCmd {
-    pipe_data: String,
+    pipe_data: Vec<u8>,
     is_0b: Cell<bool>,
     is_reverse: Cell<bool>,
     is_little_endian: Cell<bool>,
@@ -22,9 +22,9 @@ pub struct BinCmd {
 }
 
 impl BinCmd {
-    pub fn new(pipe_data: String) -> Self {
+    pub fn new(pipe_data: &[u8]) -> Self {
         Self {
-            pipe_data,
+            pipe_data: pipe_data.to_vec(),
             is_0b: Cell::new(false),
             is_reverse: Cell::new(false),
             is_little_endian: Cell::new(false),
@@ -269,7 +269,7 @@ impl Cmd for BinCmd {
             .s_type(s_type.parse().unwrap());
 
         if !self.pipe_data.is_empty() {
-            pro_err(self.cvt(&mut ostream, self.pipe_data.as_bytes()));
+            pro_err(self.cvt(&mut ostream, self.pipe_data.as_slice()));
         }
 
         if let Some(s) = p_str {
