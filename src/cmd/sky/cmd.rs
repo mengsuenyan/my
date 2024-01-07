@@ -164,10 +164,9 @@ impl Cmd for SkyCmd {
             rpassword::prompt_password("Your password: ").expect("cannot read password");
         let mut password_assert =
             rpassword::prompt_password("input again: ").expect("cannot read password");
-        assert_eq!(
-            password, password_assert,
-            "password not same between inputs"
-        );
+        if password != password_assert {
+            panic!("password not same between inputs");
+        }
         password_assert.zeroize();
 
         thread::scope(|s| {
