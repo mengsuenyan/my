@@ -51,3 +51,6 @@ pub use sky::SkyCmd;
 
 mod hash;
 pub use hash::HashCmd;
+
+mod key;
+pub use key::KeyCmd;

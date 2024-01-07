@@ -2,11 +2,12 @@
 use crate::{CipherError, Rand};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{Euclid, One, Zero};
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::iter::{Chain, Once};
 use utils::{BigIntExt, BigUintExt};
 
-#[derive(Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Clone, Debug, PartialOrd, PartialEq, Ord, Eq, Serialize, Deserialize)]
 pub struct PublicKey {
     // n = p * q
     n: BigUint,
@@ -14,7 +15,7 @@ pub struct PublicKey {
     e: BigUint,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PrivateKey {
     pk: PublicKey,
     // d * e = 1 % lambda(n)
@@ -28,7 +29,7 @@ pub struct PrivateKey {
 }
 
 // n = p * q * r1 * ... * ri * ...
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PrimeFactor {
     p: BigInt,
     q: BigInt,
@@ -37,7 +38,7 @@ struct PrimeFactor {
     pre: PrecomputedValues,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct CRTValue {
     // d % (ri-1)
     di: BigInt,
@@ -48,7 +49,7 @@ struct CRTValue {
     ti: BigInt,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PrecomputedValues {
     // $e \cdot d_p \equiv 1 \mod (p-1)$
     // d % (p - 1)
