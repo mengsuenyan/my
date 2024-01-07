@@ -11,10 +11,11 @@ utils = { path = "../utils" }
 crypto_hash = { path = "../crypto_hash" }
 xrand = { package = "rand", version = "0.8.5", default-features = false, features = ["getrandom"]}
 rand = {path = "../rand"}
-num-bigint = {version = "0.4.3", features = ["rand"]}
+num-bigint = {version = "0.4.3", features = ["rand", "serde"]}
 num-traits = "0.2.15"
 num-integer = "0.1.45"
 anyhow = "1.0.75"
+serde = { version = "1.0.195", features = ["std", "derive"], default-features = false}
 
 [dev-dependencies]
 encode = {path = "../encode"}
