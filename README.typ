@@ -111,6 +111,8 @@
   - `CBCCs<E, N>`: Cipher block chaining ciphertext stealing, `E`指定分组加密算法, `N`指定分组字节大小. 实现标准: *SP 800-38A-add*;
     - CBCCsMode: 分为三种模式CbcCs1, CbcCs2, CbcCs3, 后两种模式都是以CbcCs1为基础实现的;
     - 特化版本: AES128CbcCs, AES192CbcCs, AES256CbcCs, AESCbcCs;
+- RSA: 实现标准*PCKS v2.2*;
+  - OAEPDecryptStream/OAEPEncryptStream/PKCS1EncryptStream/PKCS1DecryptStream;
 
 == MAC
 
@@ -143,4 +145,5 @@
 - `my h`: 哈希算法, 支持crypto_hash中的hash算法;
 - `my c`: 加密算法, 支持cipher中的加密算法;
 - `my s`: 签名算法, 支持cipher中的签名算法;
+- `my k`: 密钥生成;
 - `my sky`: 自定义的文件加密;

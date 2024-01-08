@@ -165,7 +165,8 @@ impl Cmd for SkyCmd {
         let mut password_assert =
             rpassword::prompt_password("input again: ").expect("cannot read password");
         if password != password_assert {
-            panic!("password not same between inputs");
+            eprintln!("password not same between inputs");
+            std::process::exit(0x1);
         }
         password_assert.zeroize();
 

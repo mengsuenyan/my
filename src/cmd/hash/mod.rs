@@ -6,6 +6,12 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+pub trait HasherCmd {
+    fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>>;
+
+    fn run(&self, m: &ArgMatches);
+}
+
 fn common_cmd(name: &str) -> Command {
     Command::new(name.to_string())
         .arg(
@@ -125,13 +131,24 @@ macro_rules! impl_cmd_for_hashcmd {
             }
 
             fn run(&self, m: &ArgMatches) {
-                let d = common_run(<$HASH>::new(), self.pipe.as_slice(), m);
+                let h = self.generate_hasher(m).unwrap();
+                let d = common_run(h, self.pipe.as_slice(), m);
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {
                     println!("{:#02x}", d);
                 } else {
                     println!("{:02x}", d);
                 }
+            }
+        }
+
+        impl HasherCmd for $TYPE {
+            fn generate_hasher(&self, _m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>> {
+                Ok(Box::new(<$HASH>::new()))
+            }
+
+            fn run(&self, m: &ArgMatches) {
+                Cmd::run(self, m)
             }
         }
     };
@@ -207,42 +224,97 @@ impl Cmd for HashCmd {
     }
 
     fn run(&self, m: &ArgMatches) {
-        match m.subcommand() {
-            Some((SM3Cmd::NAME, m)) => SM3Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA1Cmd::NAME, m)) => SHA1Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_224Cmd::NAME, m)) => SHA2_224Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_256Cmd::NAME, m)) => SHA2_256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_384Cmd::NAME, m)) => SHA2_384Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_512Cmd::NAME, m)) => SHA2_512Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_512t224Cmd::NAME, m)) => SHA2_512t224Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_512t256Cmd::NAME, m)) => SHA2_512t256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA2_512tCmd::NAME, m)) => SHA2_512tCmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA3_224Cmd::NAME, m)) => SHA3_224Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA3_256Cmd::NAME, m)) => SHA3_256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA3_384Cmd::NAME, m)) => SHA3_384Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHA3_512Cmd::NAME, m)) => SHA3_512Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHAKE128Cmd::NAME, m)) => SHAKE128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((SHAKE256Cmd::NAME, m)) => SHAKE256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((RawSHAKE128Cmd::NAME, m)) => RawSHAKE128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((RawSHAKE256Cmd::NAME, m)) => RawSHAKE256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((CSHAKE128Cmd::NAME, m)) => CSHAKE128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((CSHAKE256Cmd::NAME, m)) => CSHAKE256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((KMACXof128Cmd::NAME, m)) => KMACXof128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((KMACXof256Cmd::NAME, m)) => KMACXof256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((KMAC128Cmd::NAME, m)) => KMAC128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((KMAC256Cmd::NAME, m)) => KMAC256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2b128Cmd::NAME, m)) => BLAKE2b128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2b224Cmd::NAME, m)) => BLAKE2b224Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2b256Cmd::NAME, m)) => BLAKE2b256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2b384Cmd::NAME, m)) => BLAKE2b384Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2b512Cmd::NAME, m)) => BLAKE2b512Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2s128Cmd::NAME, m)) => BLAKE2s128Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2s224Cmd::NAME, m)) => BLAKE2s224Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2s256Cmd::NAME, m)) => BLAKE2s256Cmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2bCmd::NAME, m)) => BLAKE2bCmd::new(self.pipe.as_slice()).run(m),
-            Some((BLAKE2sCmd::NAME, m)) => BLAKE2sCmd::new(self.pipe.as_slice()).run(m),
+        self.hasher_cmd(m).run();
+    }
+}
+
+pub struct DynHasherCmd<'a> {
+    h: Box<dyn HasherCmd>,
+    m: &'a ArgMatches,
+}
+
+impl<'a> DynHasherCmd<'a> {
+    fn run(&'a self) {
+        self.h.run(self.m);
+    }
+
+    fn new(h: Box<dyn HasherCmd>, m: &'a ArgMatches) -> Self {
+        Self { h, m }
+    }
+
+    pub fn generate_hasher(&self) -> anyhow::Result<Box<dyn DigestX>> {
+        self.h.generate_hasher(self.m)
+    }
+}
+
+impl HashCmd {
+    pub fn hasher_cmd<'a>(&self, m: &'a ArgMatches) -> DynHasherCmd<'a> {
+        let (h, m): (Box<dyn HasherCmd>, &'a ArgMatches) = match m.subcommand() {
+            Some((SM3Cmd::NAME, m)) => (Box::new(SM3Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA1Cmd::NAME, m)) => (Box::new(SHA1Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA2_224Cmd::NAME, m)) => (Box::new(SHA2_224Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA2_256Cmd::NAME, m)) => (Box::new(SHA2_256Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA2_384Cmd::NAME, m)) => (Box::new(SHA2_384Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA2_512Cmd::NAME, m)) => (Box::new(SHA2_512Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA2_512t224Cmd::NAME, m)) => {
+                (Box::new(SHA2_512t224Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((SHA2_512t256Cmd::NAME, m)) => {
+                (Box::new(SHA2_512t256Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((SHA2_512tCmd::NAME, m)) => (Box::new(SHA2_512tCmd::new(self.pipe.as_slice())), m),
+            Some((SHA3_224Cmd::NAME, m)) => (Box::new(SHA3_224Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA3_256Cmd::NAME, m)) => (Box::new(SHA3_256Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA3_384Cmd::NAME, m)) => (Box::new(SHA3_384Cmd::new(self.pipe.as_slice())), m),
+            Some((SHA3_512Cmd::NAME, m)) => (Box::new(SHA3_512Cmd::new(self.pipe.as_slice())), m),
+            Some((SHAKE128Cmd::NAME, m)) => (Box::new(SHAKE128Cmd::new(self.pipe.as_slice())), m),
+            Some((SHAKE256Cmd::NAME, m)) => (Box::new(SHAKE256Cmd::new(self.pipe.as_slice())), m),
+            Some((RawSHAKE128Cmd::NAME, m)) => {
+                (Box::new(RawSHAKE128Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((RawSHAKE256Cmd::NAME, m)) => {
+                (Box::new(RawSHAKE256Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((CSHAKE128Cmd::NAME, m)) => (Box::new(CSHAKE128Cmd::new(self.pipe.as_slice())), m),
+            Some((CSHAKE256Cmd::NAME, m)) => (Box::new(CSHAKE256Cmd::new(self.pipe.as_slice())), m),
+            Some((KMACXof128Cmd::NAME, m)) => {
+                (Box::new(KMACXof128Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((KMACXof256Cmd::NAME, m)) => {
+                (Box::new(KMACXof256Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((KMAC128Cmd::NAME, m)) => (Box::new(KMAC128Cmd::new(self.pipe.as_slice())), m),
+            Some((KMAC256Cmd::NAME, m)) => (Box::new(KMAC256Cmd::new(self.pipe.as_slice())), m),
+            Some((BLAKE2b128Cmd::NAME, m)) => {
+                (Box::new(BLAKE2b128Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2b224Cmd::NAME, m)) => {
+                (Box::new(BLAKE2b224Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2b256Cmd::NAME, m)) => {
+                (Box::new(BLAKE2b256Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2b384Cmd::NAME, m)) => {
+                (Box::new(BLAKE2b384Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2b512Cmd::NAME, m)) => {
+                (Box::new(BLAKE2b512Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2s128Cmd::NAME, m)) => {
+                (Box::new(BLAKE2s128Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2s224Cmd::NAME, m)) => {
+                (Box::new(BLAKE2s224Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2s256Cmd::NAME, m)) => {
+                (Box::new(BLAKE2s256Cmd::new(self.pipe.as_slice())), m)
+            }
+            Some((BLAKE2bCmd::NAME, m)) => (Box::new(BLAKE2bCmd::new(self.pipe.as_slice())), m),
+            Some((BLAKE2sCmd::NAME, m)) => (Box::new(BLAKE2sCmd::new(self.pipe.as_slice())), m),
             Some((other, _m)) => panic!("not support the {other} hash algorithm"),
             None => panic!("need to specified the hash algorithm"),
-        }
+        };
+
+        DynHasherCmd::new(h, m)
     }
 }
