@@ -12,27 +12,27 @@ use num_bigint::BigUint;
 use std::cell::RefCell;
 use std::ops::Range;
 
-pub struct PSSVerify<H: DigestX, R: Rand> {
+pub struct PSSVerify<H: DigestX> {
     key: PublicKey,
     // salt len
     slen: usize,
     hlen: usize,
     hf: RefCell<H>,
-    rd: RefCell<R>,
 }
 
 pub struct PSSSign<H: DigestX, R: Rand> {
     key: PrivateKey,
-    pss: PSSVerify<H, R>,
+    rd: RefCell<R>,
+    pss: PSSVerify<H>,
 }
 
-impl<H: DigestX, R: Rand> AsRef<PSSVerify<H, R>> for PSSSign<H, R> {
-    fn as_ref(&self) -> &PSSVerify<H, R> {
+impl<H: DigestX, R: Rand> AsRef<PSSVerify<H>> for PSSSign<H, R> {
+    fn as_ref(&self) -> &PSSVerify<H> {
         &self.pss
     }
 }
 
-impl<H: DigestX, R: Rand> AsRef<PublicKey> for PSSVerify<H, R> {
+impl<H: DigestX> AsRef<PublicKey> for PSSVerify<H> {
     fn as_ref(&self) -> &PublicKey {
         &self.key
     }
@@ -44,24 +44,19 @@ impl<H: DigestX, R: Rand> AsRef<PrivateKey> for PSSSign<H, R> {
     }
 }
 
-impl<H: DigestX, R: Rand> From<PSSSign<H, R>> for PSSVerify<H, R> {
+impl<H: DigestX, R: Rand> From<PSSSign<H, R>> for PSSVerify<H> {
     fn from(value: PSSSign<H, R>) -> Self {
         value.pss
     }
 }
 
-impl<H: DigestX, R: Rand> PSSVerify<H, R> {
+impl<H: DigestX> PSSVerify<H> {
     /// `hasher`: message digest generator;
     /// `rd`: random number generator;
     /// `salt_len` the length of salt in bytes, `None` means the salt length equal
     /// to the `digest.len()`, `Some(0)` means that the salt length compute from the modulus bit length of public key.
     /// `Some(x)` means that the salt length equal to `x`;
-    pub fn new(
-        key: PublicKey,
-        hasher: H,
-        rng: R,
-        salt_len: Option<usize>,
-    ) -> Result<Self, CipherError> {
+    pub fn new(key: PublicKey, hasher: H, salt_len: Option<usize>) -> Result<Self, CipherError> {
         if hasher.digest_bits_x() & 7 != 0 {
             return Err(CipherError::Other(
                 "pss: hasher bits must be multiple of 8".to_string(),
@@ -96,7 +91,6 @@ impl<H: DigestX, R: Rand> PSSVerify<H, R> {
 
         Ok(Self {
             key,
-            rd: RefCell::new(rng),
             hlen,
             hf: RefCell::new(hasher),
             slen,
@@ -167,55 +161,6 @@ impl<H: DigestX, R: Rand> PSSVerify<H, R> {
                 end: em_len - 1,
             },
         )
-    }
-
-    fn emsa_pss_encode(&self, msg: &[u8], em: &mut Vec<u8>) -> Result<(), CipherError> {
-        let (mut salt, mut rd) = (vec![0u8; self.slen], self.rd.borrow_mut());
-        rd.rand(salt.as_mut_slice());
-        self.emsa_pss_encode_with_salt(msg, salt.as_slice(), em)
-    }
-
-    // em.len() = klen
-    // em = maskedDB || H || 0xbc
-    // H = Hash(M')
-    // M' = 0x00 || ... | 0x00 || Hash(msg) || salt
-    // db = ps || 0x01 || salt
-    // maskedDB = MGF(H, em.len - H.len - 1) ^ db
-    fn emsa_pss_encode_with_salt(
-        &self,
-        msg: &[u8],
-        salt: &[u8],
-        em: &mut Vec<u8>,
-    ) -> Result<(), CipherError> {
-        let (em_len, slen) = (self.em_len(), self.slen);
-
-        em.clear();
-        em.resize(em_len, 0);
-
-        let mut hasher = self.hf.borrow_mut();
-        hasher.reset_x();
-        hasher.write_all(msg).unwrap();
-        let h_msg = hasher.finish_x();
-
-        // H = Hash(M')
-        hasher.reset_x();
-        hasher.write_all([0u8; 8].as_slice()).unwrap();
-        hasher.write_all(h_msg.as_slice()).unwrap();
-        hasher.write_all(salt).unwrap();
-        let h_msg = hasher.finish_x();
-        drop(hasher);
-
-        // em = maskedDB || H || 0xbc
-        let (db_idx, h_idx) = self.idx_bound();
-        em[h_idx.clone()].copy_from_slice(h_msg.as_slice());
-        em[h_idx.end] = 0xbc;
-        // db = ps || 0x01 || salt
-        em[db_idx.end - slen - 1] = 0x01;
-        em[(db_idx.end - slen)..db_idx.end].copy_from_slice(salt);
-        self.mgf1_xor(em.as_mut_slice());
-        em[0] &= 0xffu8 >> ((em_len << 3) - self.em_bits());
-
-        Ok(())
     }
 
     fn emsa_pss_verify(&self, msg: &[u8], em: &mut [u8]) -> Result<(), CipherError> {
@@ -302,9 +247,13 @@ impl<H: DigestX, R: Rand> PSSSign<H, R> {
         rng: R,
         salt_len: Option<usize>,
     ) -> Result<Self, CipherError> {
-        let pss = PSSVerify::new(key.public_key().clone(), hasher, rng, salt_len)?;
+        let pss = PSSVerify::new(key.public_key().clone(), hasher, salt_len)?;
         key.is_valid()?;
-        Ok(Self { pss, key })
+        Ok(Self {
+            pss,
+            key,
+            rd: RefCell::new(rng),
+        })
     }
 
     /// 不检查key的合法性, 无需`n`的因子`p,q`
@@ -314,8 +263,12 @@ impl<H: DigestX, R: Rand> PSSSign<H, R> {
         rng: R,
         salt_len: Option<usize>,
     ) -> Result<Self, CipherError> {
-        let pss = PSSVerify::new(key.public_key().clone(), hasher, rng, salt_len)?;
-        Ok(Self { pss, key })
+        let pss = PSSVerify::new(key.public_key().clone(), hasher, salt_len)?;
+        Ok(Self {
+            pss,
+            key,
+            rd: RefCell::new(rng),
+        })
     }
 
     pub fn salt_len(&self) -> usize {
@@ -342,9 +295,58 @@ impl<H: DigestX, R: Rand> PSSSign<H, R> {
         self.pss.hash_len()
     }
 
+    fn emsa_pss_encode(&self, msg: &[u8], em: &mut Vec<u8>) -> Result<(), CipherError> {
+        let (mut salt, mut rd) = (vec![0u8; self.salt_len()], self.rd.borrow_mut());
+        rd.rand(salt.as_mut_slice());
+        self.emsa_pss_encode_with_salt(msg, salt.as_slice(), em)
+    }
+
+    // em.len() = klen
+    // em = maskedDB || H || 0xbc
+    // H = Hash(M')
+    // M' = 0x00 || ... | 0x00 || Hash(msg) || salt
+    // db = ps || 0x01 || salt
+    // maskedDB = MGF(H, em.len - H.len - 1) ^ db
+    fn emsa_pss_encode_with_salt(
+        &self,
+        msg: &[u8],
+        salt: &[u8],
+        em: &mut Vec<u8>,
+    ) -> Result<(), CipherError> {
+        let (em_len, slen) = (self.em_len(), self.salt_len());
+
+        em.clear();
+        em.resize(em_len, 0);
+
+        let mut hasher = self.pss.hf.borrow_mut();
+        hasher.reset_x();
+        hasher.write_all(msg).unwrap();
+        let h_msg = hasher.finish_x();
+
+        // H = Hash(M')
+        hasher.reset_x();
+        hasher.write_all([0u8; 8].as_slice()).unwrap();
+        hasher.write_all(h_msg.as_slice()).unwrap();
+        hasher.write_all(salt).unwrap();
+        let h_msg = hasher.finish_x();
+        drop(hasher);
+
+        // em = maskedDB || H || 0xbc
+        let (db_idx, h_idx) = self.pss.idx_bound();
+        em[h_idx.clone()].copy_from_slice(h_msg.as_slice());
+        em[h_idx.end] = 0xbc;
+        // db = ps || 0x01 || salt
+        em[db_idx.end - slen - 1] = 0x01;
+        em[(db_idx.end - slen)..db_idx.end].copy_from_slice(salt);
+        self.pss.mgf1_xor(em.as_mut_slice());
+        em[0] &= 0xffu8 >> ((em_len << 3) - self.em_bits());
+
+        Ok(())
+    }
+
     fn sign_inner(&self, msg: &[u8], signature: &mut Vec<u8>) -> Result<(), CipherError> {
         let mut em = vec![];
-        self.pss.emsa_pss_encode(msg, &mut em)?;
+        self.emsa_pss_encode(msg, &mut em)?;
         let m = BigUint::from_bytes_be(em.as_slice());
         let c = self.key.rsadp(&m)?;
         let mut s = c.to_bytes_be();
@@ -354,7 +356,7 @@ impl<H: DigestX, R: Rand> PSSSign<H, R> {
     }
 }
 
-impl<H: DigestX, R: Rand> Verify for PSSVerify<H, R> {
+impl<H: DigestX> Verify for PSSVerify<H> {
     fn verify(&self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError> {
         self.verify_inner(msg, sign)
     }
@@ -374,7 +376,7 @@ impl<H: DigestX, R: Rand> Sign for PSSSign<H, R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rsa::{PSSSign, PSSVerify, PrivateKey, PublicKey};
+    use crate::rsa::{PSSSign, PrivateKey, PublicKey};
     use crate::DefaultRand;
     use crate::{Sign, Verify};
     use crypto_hash::sha2::{SHA1, SHA256};
@@ -425,7 +427,7 @@ mod tests {
         assert_eq!(&pk, key.public_key());
 
         let (sha1, rd) = (SHA1::new(), DefaultRand::default());
-        let pss = PSSVerify::new(key.public_key().clone(), sha1, rd, Some(salt.len())).unwrap();
+        let pss = PSSSign::new(key, sha1, rd, Some(salt.len())).unwrap();
 
         let mut em = Vec::with_capacity(expected.len());
         pss.emsa_pss_encode_with_salt(msg.as_slice(), salt.as_slice(), &mut em)
@@ -433,7 +435,8 @@ mod tests {
 
         assert_eq!(em, expected);
 
-        pss.emsa_pss_verify(msg.as_slice(), em.as_mut_slice())
+        pss.pss
+            .emsa_pss_verify(msg.as_slice(), em.as_mut_slice())
             .unwrap();
     }
 

@@ -54,3 +54,6 @@ pub use hash::HashCmd;
 
 mod key;
 pub use key::KeyCmd;
+
+mod sign;
+pub use sign::SignCmd;

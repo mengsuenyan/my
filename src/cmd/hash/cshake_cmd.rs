@@ -1,10 +1,10 @@
 use crate::cmd::hash::{
-    common_cmd, common_run, CSHAKE128Cmd, CSHAKE256Cmd, KMAC128Cmd, KMAC256Cmd, KMACXof128Cmd,
-    KMACXof256Cmd,
+    common_cmd, common_run, CSHAKE128Cmd, CSHAKE256Cmd, HasherCmd, KMAC128Cmd, KMAC256Cmd,
+    KMACXof128Cmd, KMACXof256Cmd,
 };
 use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use crypto_hash::cshake;
+use crypto_hash::{cshake, DigestX};
 use num_bigint::BigUint;
 
 macro_rules! impl_cshake_cmd {
@@ -44,18 +44,7 @@ macro_rules! impl_cshake_cmd {
             }
 
             fn run(&self, m: &ArgMatches) {
-                let (s, fname, cname) = (
-                    m.get_one::<usize>("size").copied().unwrap(),
-                    m.get_one::<String>("fname")
-                        .map(|x| x.clone())
-                        .unwrap_or_default(),
-                    m.get_one::<String>("cname")
-                        .map(|x| x.clone())
-                        .unwrap_or_default(),
-                );
-
-                let h = <$HASH>::new(s >> 3, fname.as_bytes(), cname.as_bytes()).unwrap();
-                let d = common_run(h, self.pipe.as_slice(), m);
+                let d = common_run(self.generate_hasher(m).unwrap(), self.pipe.as_slice(), m);
 
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {
@@ -63,6 +52,31 @@ macro_rules! impl_cshake_cmd {
                 } else {
                     println!("{:02x}", d);
                 }
+            }
+        }
+
+        impl HasherCmd for $TYPE {
+            fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>>{
+                let (s, fname, cname) = (
+                    m.get_one::<u64>("size").copied().ok_or(anyhow::anyhow!("not specified the `--size`".to_string()))? as usize,
+                    m.get_one::<String>("fname")
+                        .map(|x| x.clone())
+                        .unwrap_or_default(),
+                    m.get_one::<String>("cname")
+                        .map(|x| x.clone())
+                        .unwrap_or_default(),
+                );
+                anyhow::ensure!(
+                    s & 7 == 0,
+                    "{} digest bits size need to satisfy multiple of 8", stringify!($HASH)
+                );
+
+                let h = <$HASH>::new(s >> 3, fname.as_bytes(), cname.as_bytes())?;
+                Ok(Box::new(h))
+            }
+
+            fn run(&self, m: &ArgMatches) {
+                Cmd::run(self, m)
             }
         }
     };

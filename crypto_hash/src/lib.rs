@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::ops::{Deref, DerefMut};
 
 mod output;
 pub use output::Output;
@@ -100,6 +101,27 @@ where
     }
     fn reset_x(&mut self) {
         self.reset()
+    }
+}
+
+impl DigestX for Box<dyn DigestX> {
+    fn block_bits_x(&self) -> usize {
+        self.deref().block_bits_x()
+    }
+    fn word_bits_x(&self) -> usize {
+        self.deref().word_bits_x()
+    }
+
+    fn digest_bits_x(&self) -> usize {
+        self.deref().digest_bits_x()
+    }
+
+    fn finish_x(&mut self) -> Vec<u8> {
+        self.deref_mut().finish_x()
+    }
+
+    fn reset_x(&mut self) {
+        self.deref_mut().reset_x()
     }
 }
 

@@ -158,7 +158,7 @@ impl<const R: usize, const O: usize> Write for SHA3<R, O> {
 
         if !self.buf.is_empty() {
             let l = (R - self.buf.len()).min(s.len());
-            self.buf.extend(&s[..l]);
+            self.buf.extend_from_slice(&s[..l]);
             s = &s[l..];
         }
 
@@ -167,11 +167,15 @@ impl<const R: usize, const O: usize> Write for SHA3<R, O> {
             self.buf.clear();
         }
 
-        let mut itr = s.chunks_exact(R);
-        for chunk in &mut itr {
-            self.sponge(Some(chunk));
+        let bound = s.len() - s.len() % R;
+        let chunk = &s[..bound];
+        if !chunk.is_empty() {
+            self.sponge(Some(chunk))
         }
-        self.buf.extend(itr.remainder());
+
+        if bound != s.len() {
+            self.buf.extend_from_slice(&s[bound..]);
+        }
 
         Ok(slen)
     }

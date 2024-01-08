@@ -1,7 +1,7 @@
-use crate::cmd::hash::{common_cmd, common_run, BLAKE2bCmd, BLAKE2sCmd};
+use crate::cmd::hash::{common_cmd, common_run, BLAKE2bCmd, BLAKE2sCmd, HasherCmd};
 use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use crypto_hash::blake;
+use crypto_hash::{blake, DigestX};
 use num_bigint::BigUint;
 
 macro_rules! impl_blake_cmd {
@@ -33,20 +33,7 @@ macro_rules! impl_blake_cmd {
             }
 
             fn run(&self, m: &ArgMatches) {
-                let (s, key) = (
-                    m.get_one::<u64>("size").copied().unwrap() as usize,
-                    m.get_one::<String>("key")
-                        .map(|x| x.clone())
-                        .unwrap_or_default().into_bytes(),
-                );
-                assert_eq!(
-                    s & 7,
-                    0,
-                    "SHA512t digest bits size need to satisfy multiple of 8"
-                );
-
-                let h = <$HASH>::new_with_key((s >> 3) as u8, key).unwrap();
-                let d = common_run(h, self.pipe.as_slice(), m);
+                let d = common_run(self.generate_hasher(m).unwrap(), self.pipe.as_slice(), m);
 
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {
@@ -54,6 +41,27 @@ macro_rules! impl_blake_cmd {
                 } else {
                     println!("{:02x}", d);
                 }
+            }
+        }
+
+        impl HasherCmd for $TYPE {
+            fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>>{
+                let (s, key) = (
+                    m.get_one::<u64>("size").copied().ok_or(anyhow::anyhow!("not specified the `--size`".to_string()))? as usize,
+                    m.get_one::<String>("key")
+                        .map(|x| x.clone())
+                        .unwrap_or_default().into_bytes(),
+                );
+                anyhow::ensure!(
+                    s & 7 == 0,
+                    "{} digest bits size need to satisfy multiple of 8", stringify!($HASH)
+                );
+
+                Ok(Box::new(<$HASH>::new_with_key((s >> 3) as u8, key)?))
+            }
+
+            fn run(&self, m: &ArgMatches) {
+                Cmd::run(self, m)
             }
         }
     };

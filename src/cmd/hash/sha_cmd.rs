@@ -1,9 +1,10 @@
 use crate::cmd::hash::{
-    common_cmd, common_run, RawSHAKE128Cmd, RawSHAKE256Cmd, SHA2_512tCmd, SHAKE128Cmd, SHAKE256Cmd,
+    common_cmd, common_run, HasherCmd, RawSHAKE128Cmd, RawSHAKE256Cmd, SHA2_512tCmd, SHAKE128Cmd,
+    SHAKE256Cmd,
 };
 use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use crypto_hash::{sha2::SHA512tInner, sha3};
+use crypto_hash::{sha2::SHA512tInner, sha3, DigestX};
 use num_bigint::BigUint;
 
 macro_rules! impl_desired_len_hash {
@@ -26,15 +27,7 @@ macro_rules! impl_desired_len_hash {
             }
 
             fn run(&self, m: &ArgMatches) {
-                let s = m.get_one::<usize>("size").copied().unwrap();
-                assert_eq!(
-                    s & 7,
-                    0,
-                    "SHA512t digest bits size need to satisfy multiple of 8"
-                );
-
-                let h = <$HASH>::new(s >> 3);
-                let d = common_run(h, self.pipe.as_slice(), m);
+                let d = common_run(self.generate_hasher(m).unwrap(), self.pipe.as_slice(), m);
 
                 let d = BigUint::from_bytes_be(d.as_slice());
                 if m.get_flag("prefix") {
@@ -42,6 +35,23 @@ macro_rules! impl_desired_len_hash {
                 } else {
                     println!("{:02x}", d);
                 }
+            }
+        }
+
+        impl HasherCmd for $TYPE {
+            fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>>{
+                let s = m.get_one::<u64>("size").copied().ok_or(anyhow::anyhow!("not specified the `--size`".to_string()))? as usize;
+                anyhow::ensure!(
+                    s & 7 == 0,
+                    "{} digest bits size need to satisfy multiple of 8", stringify!($HASH)
+                );
+
+                let h = <$HASH>::new(s >> 3);
+                Ok(Box::new(h))
+            }
+
+            fn run(&self, m: &ArgMatches) {
+                Cmd::run(self, m)
             }
         }
     };
@@ -75,15 +85,7 @@ impl Cmd for SHA2_512tCmd {
     }
 
     fn run(&self, m: &ArgMatches) {
-        let s = m.get_one::<u64>("size").copied().unwrap() as usize;
-        assert_eq!(
-            s & 7,
-            0,
-            "SHA512t digest bits size need to satisfy multiple of 8"
-        );
-
-        let h = SHA512tInner::new(s >> 3).unwrap();
-        let d = common_run(h, self.pipe.as_slice(), m);
+        let d = common_run(self.generate_hasher(m).unwrap(), self.pipe.as_slice(), m);
 
         let d = BigUint::from_bytes_be(d.as_slice());
         if m.get_flag("prefix") {
@@ -91,5 +93,27 @@ impl Cmd for SHA2_512tCmd {
         } else {
             println!("{:02x}", d);
         }
+    }
+}
+
+impl HasherCmd for SHA2_512tCmd {
+    fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>> {
+        let s = m
+            .get_one::<u64>("size")
+            .copied()
+            .ok_or(anyhow::anyhow!("not specified the `--size`".to_string()))?
+            as usize;
+        anyhow::ensure!(
+            s & 7 == 0,
+            "sha2::SHA512t digest bits size need to satisfy multiple of 8"
+        );
+
+        let h = SHA512tInner::new(s >> 3)?;
+
+        Ok(Box::new(h))
+    }
+
+    fn run(&self, m: &ArgMatches) {
+        Cmd::run(self, m)
     }
 }
