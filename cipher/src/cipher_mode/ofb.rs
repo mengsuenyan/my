@@ -14,9 +14,7 @@
 //!
 
 use crate::block_cipher::{AES, AES128, AES192, AES256};
-use crate::{
-    BlockCipher, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt,
-};
+use crate::{BlockEncryptX, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
 use std::io::{Read, Write};
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
@@ -24,11 +22,11 @@ use zeroize::Zeroize;
 /// The Output Feedback Mode(OFB) <br>
 ///
 /// 给定初始向量IV, **其需要是一个nonce值**. 即对于给定的密钥, 每次执行OFB模式时, $IV$都需要是独一无二的(unique), 且需要是保密的. <br>
-pub struct OFB<E, const BLOCK_SIZE: usize> {
+pub struct OFB<E> {
     //缓存输入数据
     data: Vec<u8>,
     /// 初始化向量
-    iv: Option<[u8; BLOCK_SIZE]>,
+    iv: Vec<u8>,
     cipher: E,
     is_encrypt: Option<bool>,
 }
@@ -41,15 +39,15 @@ def_type_block_cipher!(
     <AES256Ofb, AES256>
 );
 
-impl<E, const N: usize> OFB<E, N> {
+impl<E> OFB<E> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
-        self.iv = None;
+        self.iv.clear();
     }
 
     fn check_iv(&self) -> Result<(), CipherError> {
-        if self.iv.is_none() {
+        if self.iv.is_empty() {
             Err(CipherError::NotSetInitialVec)
         } else {
             Ok(())
@@ -74,53 +72,72 @@ impl<E, const N: usize> OFB<E, N> {
     }
 }
 
-impl<E, const N: usize> OFB<E, N> {
-    pub fn new(cipher: E, iv: [u8; N]) -> Self {
-        Self {
-            data: Vec::with_capacity(N),
-            iv: Some(iv),
+impl<E: BlockEncryptX> OFB<E> {
+    pub fn new(cipher: E, iv: Vec<u8>) -> Result<Self, CipherError> {
+        if iv.len() != cipher.block_size_x() {
+            return Err(CipherError::InvalidKeySize {
+                real: iv.len(),
+                target: Some(cipher.block_size_x()),
+            });
+        }
+
+        Ok(Self {
+            data: vec![],
+            iv,
             cipher,
             is_encrypt: None,
-        }
+        })
     }
 
-    pub fn set_iv(&mut self, iv: [u8; N]) {
-        self.iv = Some(iv);
+    pub fn set_iv(&mut self, mut iv: Vec<u8>) -> Result<(), CipherError> {
+        if iv.len() != self.cipher.block_size_x() {
+            return Err(CipherError::InvalidKeySize {
+                real: iv.len(),
+                target: Some(self.cipher.block_size_x()),
+            });
+        }
+
+        self.iv.clear();
+        self.iv.append(&mut iv);
+        Ok(())
     }
 }
 
-impl<E, const N: usize> OFB<E, N>
+impl<E> OFB<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
-    // 调用者负责输出截断为`data.len()`
-    fn encrypt_inner(cipher: &E, iv: &mut [u8; N], data: &[u8]) -> [u8; N] {
-        let oj = cipher.encrypt_block(&*iv);
-        // ij
-        iv.copy_from_slice(oj.as_slice());
-        let mut d = [0u8; N];
-        d.iter_mut()
-            .zip(data.iter().zip(oj.iter()))
-            .for_each(|(a, (b, c))| {
-                *a = b ^ c;
-            });
+    fn encrypt_inner(
+        cipher: &E,
+        data: &[u8],
+        iv: &mut Vec<u8>,
+        cdata: &mut Vec<u8>,
+    ) -> Result<(), CipherError> {
+        cdata.clear();
+        cipher.encrypt_block_x(iv.as_slice(), cdata)?;
+        iv.copy_from_slice(cdata);
 
-        d
+        cdata
+            .iter_mut()
+            .zip(data.iter())
+            .for_each(|(a, &b)| *a ^= b);
+
+        Ok(())
     }
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<E: Zeroize, const N: usize> Zeroize for OFB<E, N> {
+impl<E: Zeroize> Zeroize for OFB<E> {
     fn zeroize(&mut self) {
         self.data.zeroize();
         self.cipher.zeroize();
-        self.iv.zeroize();
+        self.iv.clear();
     }
 }
 
-impl<E, const N: usize> OFB<E, N>
+impl<E> OFB<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_inner<'a, R: Read, W: Write>(
         &'a mut self,
@@ -130,30 +147,30 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(is_encrypt)?;
         self.check_iv()?;
-        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        let (mut buf, mut out_len, n) = (Vec::with_capacity(2048), 0, self.cipher.block_size_x());
 
         buf.extend(self.data.iter());
         self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
 
-        let mut itr = buf.chunks_exact(N);
+        let mut itr = buf.chunks_exact(n);
         for chunk in &mut itr {
-            let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), chunk);
+            Self::encrypt_inner(&self.cipher, chunk, &mut self.iv, &mut self.data)?;
             out_data
-                .write_all(d.as_slice())
+                .write_all(self.data.as_slice())
                 .map_err(CipherError::from)?;
-            out_len += N;
+            out_len += n;
         }
-
+        self.data.clear();
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
             let mut s = 0;
             if !sf.data.is_empty() {
-                let d =
-                    Self::encrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), sf.data.as_slice());
+                let mut buf = vec![];
+                Self::encrypt_inner(&sf.cipher, sf.data.as_slice(), &mut sf.iv, &mut buf)?;
                 outdata
-                    .write_all(&d.as_slice()[..sf.data.len()])
+                    .write_all(&buf[..sf.data.len()])
                     .map_err(CipherError::from)?;
                 s += sf.data.len();
             }
@@ -166,9 +183,9 @@ where
     }
 }
 
-impl<E, const N: usize> StreamEncrypt for OFB<E, N>
+impl<E> StreamEncrypt for OFB<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_encrypt<'a, R: Read, W: Write>(
         &'a mut self,
@@ -179,9 +196,9 @@ where
     }
 }
 
-impl<E, const N: usize> StreamDecrypt for OFB<E, N>
+impl<E> StreamDecrypt for OFB<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_decrypt<'a, R: Read, W: Write>(
         &'a mut self,
@@ -248,8 +265,7 @@ mod tests {
     #[test]
     fn ofb_aes() {
         for (i, (key, iv, pt, ct)) in cases().into_iter().enumerate() {
-            let iv: [u8; AES::BLOCK_SIZE] = iv.try_into().unwrap();
-            let mut ofb = AESOfb::new(AES::new(key.as_slice()).unwrap(), iv);
+            let mut ofb = AESOfb::new(AES::new(key.as_slice()).unwrap(), iv.clone()).unwrap();
 
             let (mut data, mut buf) = (pt.as_slice(), vec![]);
             let (ilen, olen) = ofb
@@ -264,7 +280,7 @@ mod tests {
             );
             assert_eq!(buf, ct, "case {i} stream encrypt failed");
 
-            ofb.set_iv(iv);
+            ofb.set_iv(iv.clone()).unwrap();
             let (mut data, mut buf) = (ct.as_slice(), vec![]);
             let (ilen, olen) = ofb
                 .stream_decrypt(&mut data, &mut buf)
@@ -280,12 +296,12 @@ mod tests {
 
             let ofb: RefCell<_> = ofb.into();
             buf.clear();
-            ofb.borrow_mut().set_iv(iv);
+            ofb.borrow_mut().set_iv(iv.clone()).unwrap();
             ofb.encrypt(pt.as_slice(), &mut buf).unwrap();
             assert_eq!(buf, ct, "case {i} encrypt failed");
 
             buf.clear();
-            ofb.borrow_mut().set_iv(iv);
+            ofb.borrow_mut().set_iv(iv).unwrap();
             ofb.decrypt(ct.as_slice(), &mut buf).unwrap();
             assert_eq!(buf, pt, "case {i} decrypt failed");
         }

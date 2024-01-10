@@ -82,12 +82,12 @@
 == AuthenticationCipher
 
 - CCM: Counter with Cipher Block Chaining-Message Authentication Code, 实现标准*SP 800-38C*;
-  - `CCM<BlockEncrypt, const BlockSize: usize>`: 指定实现了`BlockEncrypt`trait的加密算法;
+  - `CCM<BlockEncryptX, const BlockSize: usize>`: 指定实现了`BlockEncryptX`trait的加密算法;
     - 特化版本: AES128Ccm, AES192Ccm, AES256Ccm, AESCcm;
 - GCM: Galois/Counter Mode, 实现标准*SP 800-38D*;
-  - `GCM<BlockEncrypt>`, 指定实现了`BlockEncrypt<16>`的算法;
+  - `GCM<BlockEncryptX>`, 指定实现了`BlockEncryptX`的算法;
     - 特化版本: AES128Gcm, AES192Gcm, AES256Gcm, AESGcm;
-  - `GCMStream<BlockEncrypt>`, 指定实现了`BlockEncrypt<16>`算法, 和`GCM`一样的, 只不过另外实现了`StreamCipher`接口;
+  - `GCMStream<BlockEncryptX>`, 指定实现了`BlockEncryptX`算法, 和`GCM`一样的, 只不过另外实现了`StreamCipher`接口;
     - 特化版本: AES128GcmStream, AES192GcmStream, AES256GcmStream, AESGcmStream;
 
 == StreamCipher
@@ -98,17 +98,17 @@
 - ZUC: 祖冲之流加密算法, 实现标准*GM/T 0001-2012*;
   - ZUC;
 - 分组加密的工作模式: 实现标准*SP 800-38A*;
-  - `ECB<P, E, N>`: Electronic codebook mode, `P`指定填充方法, `E`指定分组加密算法, `N`指定分组字节大小;
+  - `ECB<P, E>`: Electronic codebook mode, `P`指定填充方法, `E`指定分组加密算法;
     - 特化版本: AES128Ecb, AES192Ecb, AES256Ecb, AESEcb;
-  - `CBC<P, E, N>`: Cipher block chaining mode,`P`指定填充方法, `E`指定分组加密算法, `N`指定分组字节大小;
+  - `CBC<P, E>`: Cipher block chaining mode,`P`指定填充方法, `E`指定分组加密算法;
     - 特化版本: AES128Cbc, AES192Cbc, AES256Cbc, AESCbc;
-  - `CFB<P, E, N>`: Cipher feedback mode, `P`指定填充方法, `E`指定分组加密算法, `N`指定分组字节大小;
+  - `CFB<P, E>`: Cipher feedback mode, `P`指定填充方法, `E`指定分组加密算法;
     - 特化版本: AES128Cfb, AES192Cfb, AES256Cfb, AESCfb;
-  - `OFB<E, N>`: Output feedback mode, `E`指定分组加密算法, `N`指定分组字节大小;
+  - `OFB<E>`: Output feedback mode, `E`指定分组加密算法;
     - 特化版本: AES128Ofb, AES192Ofb, AES256Ofb, AESOfb;
-  - `CTR<C, E, N>`: Counter mode, `C`指定计数器, `E`指定分组加密算法, `N`指定分组字节大小;
+  - `CTR<C, E>`: Counter mode, `C`指定计数器, `E`指定分组加密算法;
     - 特化版本: AES128Ctr, AES192Ctr, AES256Ctr, AESCtr;
-  - `CBCCs<E, N>`: Cipher block chaining ciphertext stealing, `E`指定分组加密算法, `N`指定分组字节大小. 实现标准: *SP 800-38A-add*;
+  - `CBCCs<E>`: Cipher block chaining ciphertext stealing, `E`指定分组加密算法. 实现标准: *SP 800-38A-add*;
     - CBCCsMode: 分为三种模式CbcCs1, CbcCs2, CbcCs3, 后两种模式都是以CbcCs1为基础实现的;
     - 特化版本: AES128CbcCs, AES192CbcCs, AES256CbcCs, AESCbcCs;
 - RSA: 实现标准*PCKS v2.2*;

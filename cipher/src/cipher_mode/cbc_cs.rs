@@ -50,11 +50,9 @@
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::{EmptyPadding, CBC};
 use crate::{
-    BlockCipher, BlockDecrypt, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt,
-    StreamEncrypt,
+    BlockDecryptX, BlockEncryptX, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt,
 };
 use std::io::{Read, Write};
-use utils::Block;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
@@ -66,8 +64,8 @@ pub enum CBCCsMode {
 }
 
 /// 限制: CBC-CS需要加解密数据的字节长度大于分组字节长度.
-pub struct CBCCs<E, const N: usize> {
-    cbc: CBC<EmptyPadding, E, N>,
+pub struct CBCCs<E> {
+    cbc: CBC<EmptyPadding, E>,
     in_buf: Vec<u8>,
     mode: CBCCsMode,
     is_encrypt: Option<bool>,
@@ -81,23 +79,26 @@ def_type_block_cipher!(
     <AES256CbcCs, AES256>
 );
 
-impl<E, const N: usize> CBCCs<E, N> {
-    pub fn new(cipher: E, iv: [u8; N], mode: CBCCsMode) -> Self {
-        Self {
-            cbc: CBC::new(cipher, iv),
+impl<E: BlockEncryptX> CBCCs<E> {
+    pub fn new(cipher: E, iv: Vec<u8>, mode: CBCCsMode) -> Result<Self, CipherError> {
+        Ok(Self {
+            cbc: CBC::new(cipher, iv)?,
             in_buf: vec![],
             mode,
             is_encrypt: None,
-        }
+        })
     }
 
-    pub fn set_iv(&mut self, iv: [u8; N]) {
-        self.cbc.set_iv(iv);
+    pub fn set_iv(&mut self, iv: Vec<u8>) -> Result<(), CipherError> {
+        self.cbc.set_iv(iv)
     }
+}
 
+impl<E> CBCCs<E> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.in_buf.clear();
+        self.cbc.clear_resource();
     }
 
     fn set_working_flag(&mut self, is_encrypt: bool) -> Result<(), CipherError> {
@@ -119,13 +120,13 @@ impl<E, const N: usize> CBCCs<E, N> {
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<E: Zeroize, const N: usize> Zeroize for CBCCs<E, N> {
+impl<E: Zeroize> Zeroize for CBCCs<E> {
     fn zeroize(&mut self) {
         self.cbc.zeroize();
     }
 }
 
-impl<E: BlockEncrypt<N>, const N: usize> StreamEncrypt for CBCCs<E, N> {
+impl<E: BlockEncryptX> StreamEncrypt for CBCCs<E> {
     fn stream_encrypt<'a, R: Read, W: Write>(
         &'a mut self,
         in_data: &'a mut R,
@@ -133,13 +134,17 @@ impl<E: BlockEncrypt<N>, const N: usize> StreamEncrypt for CBCCs<E, N> {
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(true)?;
 
-        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        let (mut buf, mut out_len, block_size) = (
+            Vec::with_capacity(2048),
+            0,
+            self.cbc.get_cipher().block_size_x(),
+        );
         buf.extend(self.in_buf.iter());
         self.in_buf.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
 
-        let n = (buf.len() + N - 1) / N;
-        let l = (n - 2) * N;
+        let n = (buf.len() + block_size - 1) / block_size;
+        let l = (n - 2) * block_size;
         // 保留最后两个分组
         if n > 2 {
             let mut data = &buf.as_slice()[..l];
@@ -148,10 +153,10 @@ impl<E: BlockEncrypt<N>, const N: usize> StreamEncrypt for CBCCs<E, N> {
         }
         self.in_buf.extend(buf.into_iter().skip(l));
 
-        let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
-            let d = sf.in_buf.len() % N;
+        let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
+            let d = sf.in_buf.len() % block_size;
             if d != 0 {
-                sf.in_buf.resize(sf.in_buf.len() + N - d, 0);
+                sf.in_buf.resize(sf.in_buf.len() + block_size - d, 0);
             }
 
             let mut last_txt = Vec::with_capacity(sf.in_buf.len());
@@ -161,24 +166,24 @@ impl<E: BlockEncrypt<N>, const N: usize> StreamEncrypt for CBCCs<E, N> {
                 .stream_encrypt(&mut data, &mut last_txt)?
                 .finish(&mut last_txt)?;
 
-            if last_txt.len() != (N << 1) {
+            if last_txt.len() != (block_size << 1) {
                 return Err(CipherError::Other(format!(
                     "CBC-CS invalid last block length: {}",
                     last_txt.len()
                 )));
             }
 
-            let d = if d == 0 { N } else { d };
-            if sf.mode == CBCCsMode::CbcCs1 || (sf.mode == CBCCsMode::CbcCs2 && d == N) {
+            let d = if d == 0 { block_size } else { d };
+            if sf.mode == CBCCsMode::CbcCs1 || (sf.mode == CBCCsMode::CbcCs2 && d == block_size) {
                 outdata
                     .write_all(&last_txt[0..d])
                     .map_err(CipherError::from)?;
                 outdata
-                    .write_all(&last_txt[N..])
+                    .write_all(&last_txt[block_size..])
                     .map_err(CipherError::from)?;
             } else {
                 outdata
-                    .write_all(&last_txt[N..])
+                    .write_all(&last_txt[block_size..])
                     .map_err(CipherError::from)?;
                 outdata
                     .write_all(&last_txt[0..d])
@@ -186,14 +191,14 @@ impl<E: BlockEncrypt<N>, const N: usize> StreamEncrypt for CBCCs<E, N> {
             }
 
             sf.clear_resource();
-            Ok(N + d)
+            Ok(block_size + d)
         });
 
         Ok(s)
     }
 }
 
-impl<E: BlockDecrypt<N>, const N: usize> StreamDecrypt for CBCCs<E, N> {
+impl<E: BlockDecryptX> StreamDecrypt for CBCCs<E> {
     fn stream_decrypt<'a, R: Read, W: Write>(
         &'a mut self,
         in_data: &'a mut R,
@@ -201,13 +206,17 @@ impl<E: BlockDecrypt<N>, const N: usize> StreamDecrypt for CBCCs<E, N> {
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(false)?;
 
-        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        let (mut buf, mut out_len, block_size) = (
+            Vec::with_capacity(2048),
+            0,
+            self.cbc.get_cipher().block_size_x(),
+        );
         buf.extend(self.in_buf.iter());
         self.in_buf.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
 
-        let n = (buf.len() + N - 1) / N;
-        let l = (n - 2) * N;
+        let n = (buf.len() + block_size - 1) / block_size;
+        let l = (n - 2) * block_size;
         // 保留最后两个分组
         if n > 2 {
             let mut data = &buf.as_slice()[..l];
@@ -216,32 +225,24 @@ impl<E: BlockDecrypt<N>, const N: usize> StreamDecrypt for CBCCs<E, N> {
         }
         self.in_buf.extend(buf.into_iter().skip(l));
 
-        let s = StreamCipherFinish::new(self, (in_len, out_len), |sf, outdata: &mut W| {
-            if sf.in_buf.len() <= N || sf.in_buf.len() > (N << 1) {
+        let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
+            if sf.in_buf.len() <= block_size || sf.in_buf.len() > (block_size << 1) {
                 return Err(CipherError::Other(format!(
                     "CBC-CS invalid last block length: {}",
                     sf.in_buf.len()
                 )));
             }
 
-            let d = sf.in_buf.len() - N;
-            let c_n = if sf.mode == CBCCsMode::CbcCs1 || (sf.mode == CBCCsMode::CbcCs2 && d == N) {
+            let (d, mut c_n) = (sf.in_buf.len() - block_size, vec![]);
+            if sf.mode == CBCCsMode::CbcCs1 || (sf.mode == CBCCsMode::CbcCs2 && d == block_size) {
                 let data = &sf.in_buf.as_slice()[d..];
-                let c_n = sf
-                    .cbc
-                    .get_cipher()
-                    .decrypt_block(Block::as_arr_ref_uncheck(data));
+                sf.cbc.get_cipher().decrypt_block_x(data, &mut c_n)?;
                 sf.in_buf.truncate(d);
-                c_n
             } else {
-                let data = &sf.in_buf.as_slice()[..N];
-                let c_n = sf
-                    .cbc
-                    .get_cipher()
-                    .decrypt_block(Block::as_arr_ref_uncheck(data));
+                let data = &sf.in_buf.as_slice()[..block_size];
+                sf.cbc.get_cipher().decrypt_block_x(data, &mut c_n)?;
                 sf.in_buf.rotate_right(d);
                 sf.in_buf.truncate(d);
-                c_n
             };
 
             let (zp, zpp) = (&c_n[..d], &c_n[d..]);
@@ -277,8 +278,12 @@ mod tests {
     #[test]
     fn cbc_cs1() {
         for (i, (key, iv, pt, ct)) in cases().into_iter().enumerate() {
-            let iv = iv.try_into().unwrap();
-            let mut cbc = AESCbcCs::new(AES::new(key.as_slice()).unwrap(), iv, CBCCsMode::CbcCs1);
+            let mut cbc = AESCbcCs::new(
+                AES::new(key.as_slice()).unwrap(),
+                iv.clone(),
+                CBCCsMode::CbcCs1,
+            )
+            .unwrap();
 
             let mut data = pt.as_slice();
             let mut buf = vec![];
@@ -302,7 +307,7 @@ mod tests {
 
             let mut data = ct.as_slice();
             buf.clear();
-            cbc.set_iv(iv);
+            cbc.set_iv(iv.clone()).unwrap();
             let (in_len, out_len) = cbc
                 .stream_decrypt(&mut data, &mut buf)
                 .unwrap()
@@ -324,7 +329,7 @@ mod tests {
             let cbc: RefCell<_> = cbc.into();
 
             buf.clear();
-            cbc.borrow_mut().set_iv(iv);
+            cbc.borrow_mut().set_iv(iv.clone()).unwrap();
             cbc.encrypt(pt.as_slice(), &mut buf).unwrap();
             assert_eq!(
                 buf,
@@ -334,7 +339,7 @@ mod tests {
             );
 
             buf.clear();
-            cbc.borrow_mut().set_iv(iv);
+            cbc.borrow_mut().set_iv(iv).unwrap();
             cbc.decrypt(ct.as_slice(), &mut buf).unwrap();
             assert_eq!(
                 buf,

@@ -9,7 +9,7 @@
 
 macro_rules! impl_set_working_flag {
     ($NAME: ident) => {
-        impl<P, E, const N: usize> $NAME<P, E, N> {
+        impl<P, E> $NAME<P, E> {
             fn set_working_flag(&mut self, is_encrypt: bool) -> Result<(), CipherError> {
                 match self.is_encrypt {
                     None => {
@@ -33,10 +33,10 @@ macro_rules! impl_set_working_flag {
 
 macro_rules! def_type_block_cipher {
     ($MODE: ident, [$NAME:ident, $TY: ty]) => {
-        pub type $NAME<T> = $MODE<T, $TY, {<$TY>::BLOCK_SIZE}>;
+        pub type $NAME<T> = $MODE<T, $TY>;
     };
     ($MODE: ident, <$NAME:ident, $TY: ty>) => {
-        pub type $NAME = $MODE<$TY, {<$TY>::BLOCK_SIZE}>;
+        pub type $NAME = $MODE<$TY>;
     };
     ($MODE: ident, [$NAME1: ident, $TY1: ty], $([$NAME2: ident, $TY2: ty]),+) => {
         def_type_block_cipher!($MODE, [$NAME1, $TY1]);

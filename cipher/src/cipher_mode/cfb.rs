@@ -15,10 +15,8 @@
 
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::{
-    BlockCipher, BlockEncrypt, BlockPadding, CipherError, StreamCipherFinish, StreamDecrypt,
-    StreamEncrypt,
+    BlockEncryptX, BlockPadding, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt,
 };
-use std::collections::VecDeque;
 use std::io::{Read, Write};
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
@@ -26,13 +24,13 @@ use zeroize::Zeroize;
 /// The Cipher Feedback Mode(CFB)
 ///
 /// 给定初始向量IV, IV可以不保密, 但是**它必须是不可预测的(unpredictable)**. 因此, 使用过后再次进行加解密时需调用`self.set_iv`设置新的`IV`. <br>
-pub struct CFB<P, E, const BLOCK_SIZE: usize> {
+pub struct CFB<P, E> {
     //缓存输入数据
     data: Vec<u8>,
     //缓存输出数据
-    out_buf: VecDeque<[u8; BLOCK_SIZE]>,
+    out_buf: Vec<u8>,
     /// 初始化向量
-    iv: Option<[u8; BLOCK_SIZE]>,
+    iv: Vec<u8>,
     cipher: E,
     padding: P,
     is_encrypt: Option<bool>,
@@ -50,16 +48,16 @@ def_type_block_cipher!(
     [AES256Cfb, AES256]
 );
 
-impl<P, E, const N: usize> CFB<P, E, N> {
+impl<P, E> CFB<P, E> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
         self.out_buf.clear();
-        self.iv = None;
+        self.iv.clear();
     }
 
     fn check_iv(&self) -> Result<(), CipherError> {
-        if self.iv.is_none() {
+        if self.iv.is_empty() {
             Err(CipherError::NotSetInitialVec)
         } else {
             Ok(())
@@ -67,23 +65,30 @@ impl<P, E, const N: usize> CFB<P, E, N> {
     }
 }
 
-impl<P, E, const N: usize> CFB<P, E, N>
+impl<P, E> CFB<P, E>
 where
     P: BlockPadding,
+    E: BlockEncryptX,
 {
     /// `bytes`指定CFB的`s`参数, 单位: 字节.
-    pub fn new(cipher: E, iv: [u8; N], bytes: usize) -> Result<Self, CipherError> {
-        if bytes > N || bytes == 0 {
+    pub fn new(cipher: E, iv: Vec<u8>, bytes: usize) -> Result<Self, CipherError> {
+        let n = cipher.block_size_x();
+        if bytes > n || bytes == 0 {
             return Err(CipherError::Other(format!(
                 "Invalid CFB s parameter: {}, s should satisfies with `0 < s <= {}`",
-                bytes, N
+                bytes, n
             )));
+        } else if iv.len() != cipher.block_size_x() {
+            return Err(CipherError::InvalidKeySize {
+                real: iv.len(),
+                target: Some(cipher.block_size_x()),
+            });
         }
 
         Ok(Self {
             data: Vec::with_capacity(bytes),
-            out_buf: VecDeque::new(),
-            iv: Some(iv),
+            out_buf: vec![],
+            iv,
             cipher,
             padding: P::new(bytes),
             is_encrypt: None,
@@ -95,67 +100,77 @@ where
         self.padding = padding;
     }
 
-    pub fn set_iv(&mut self, iv: [u8; N]) {
-        self.iv = Some(iv);
+    pub fn set_iv(&mut self, mut iv: Vec<u8>) -> Result<(), CipherError> {
+        if iv.len() != self.cipher.block_size_x() {
+            return Err(CipherError::InvalidKeySize {
+                real: iv.len(),
+                target: Some(self.cipher.block_size_x()),
+            });
+        }
+        self.iv.clear();
+        self.iv.append(&mut iv);
+
+        Ok(())
     }
 }
 
-impl<P, E, const N: usize> CFB<P, E, N>
+impl<P, E> CFB<P, E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
     P: BlockPadding,
 {
     // I_1 = IV; I_j = LSB_{b-s}(I_{j-1}) | C'_{j-1}, j = 2...n; O_j = Encrypt(I_j), j = 1...n; C'_j = P'_j \xor MSB_{s}(O_j), j = 1...n;
     // 调用者保证`data.len() == s`
     // 结果截取前`s`字节
-    fn encrypt_inner(cipher: &E, iv: &mut [u8; N], data: &[u8]) -> [u8; N] {
-        let s = data.len();
-        let oj = cipher.encrypt_block(&*iv);
-
-        let mut cj = [0u8; N];
-        cj.iter_mut()
-            .zip(data.iter().zip(oj.iter()))
-            .for_each(|(a, (b, c))| {
-                *a = b ^ c;
-            });
+    fn encrypt_inner(
+        cipher: &E,
+        data: &[u8],
+        iv: &mut Vec<u8>,
+        cdata: &mut Vec<u8>,
+    ) -> Result<(), CipherError> {
+        let (s, n) = (data.len(), cipher.block_size_x());
+        cdata.clear();
+        cipher.encrypt_block_x(iv.as_slice(), cdata)?;
+        cdata
+            .iter_mut()
+            .zip(data.iter())
+            .for_each(|(a, &b)| *a ^= b);
 
         // ij
-        iv.rotate_right(N - s);
+        iv.rotate_right(n - s);
         iv.iter_mut()
-            .skip(N - s)
-            .zip(cj.iter())
-            .for_each(|(a, &b)| {
-                *a = b;
-            });
+            .skip(n - s)
+            .zip(cdata.iter())
+            .for_each(|(a, &b)| *a = b);
 
-        cj
+        Ok(())
     }
 
-    fn decrypt_inner(cipher: &E, iv: &mut [u8; N], data: &[u8]) -> [u8; N] {
-        let s = data.len();
-        let oj = cipher.encrypt_block(&*iv);
+    fn decrypt_inner(
+        cipher: &E,
+        data: &[u8],
+        iv: &mut Vec<u8>,
+        out_buf: &mut Vec<u8>,
+    ) -> Result<(), CipherError> {
+        let (s, n) = (data.len(), cipher.block_size_x());
+        let pre_len = out_buf.len();
+        cipher.encrypt_block_x(iv.as_slice(), out_buf)?;
+        out_buf.truncate(pre_len + s);
 
-        let mut pj = [0u8; N];
-        pj.iter_mut()
-            .zip(data.iter().zip(oj.iter()))
-            .for_each(|(a, (b, c))| {
-                *a = b ^ c;
-            });
+        out_buf
+            .iter_mut()
+            .rev()
+            .zip(data.iter().rev())
+            .for_each(|(a, &b)| *a ^= b);
+        iv.rotate_right(n - s);
+        iv[(n - s)..].copy_from_slice(data);
 
-        iv.rotate_right(N - s);
-        iv.iter_mut()
-            .skip(N - s)
-            .zip(data.iter())
-            .for_each(|(a, &b)| {
-                *a = b;
-            });
-
-        pj
+        Ok(())
     }
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<P, E, const N: usize> Zeroize for CFB<P, E, N>
+impl<P, E> Zeroize for CFB<P, E>
 where
     E: Zeroize,
 {
@@ -166,9 +181,9 @@ where
     }
 }
 
-impl<P, E, const N: usize> StreamEncrypt for CFB<P, E, N>
+impl<P, E> StreamEncrypt for CFB<P, E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
     P: BlockPadding,
 {
     fn stream_encrypt<'a, R: Read, W: Write>(
@@ -180,25 +195,28 @@ where
         self.check_iv()?;
         let (mut buf, n, mut out_len) = (Vec::with_capacity(2048), self.s, 0);
 
-        buf.extend(self.data.iter());
+        buf.extend_from_slice(self.data.as_slice());
         self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
         let mut itr = buf.chunks_exact(n);
         for chunk in &mut itr {
-            let d = Self::encrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), chunk);
-            out_data.write_all(&d[..n]).map_err(CipherError::from)?;
+            Self::encrypt_inner(&self.cipher, chunk, &mut self.iv, &mut self.data)?;
+            out_data
+                .write_all(&self.data[..n])
+                .map_err(CipherError::from)?;
             out_len += n;
         }
+        self.data.clear();
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
             sf.padding.padding(sf.data.as_mut());
             let mut itr = sf.data.chunks_exact(n);
 
-            let mut out_len = 0;
+            let (mut out_len, mut buf) = (0, vec![]);
             for data in &mut itr {
-                let d = Self::encrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), data);
-                outdata.write_all(&d[..n]).map_err(CipherError::from)?;
+                Self::encrypt_inner(&sf.cipher, data, &mut sf.iv, &mut buf)?;
+                outdata.write_all(&buf[..n]).map_err(CipherError::from)?;
                 out_len += n;
             }
 
@@ -218,9 +236,9 @@ where
     }
 }
 
-impl<P, E, const N: usize> StreamDecrypt for CFB<P, E, N>
+impl<P, E> StreamDecrypt for CFB<P, E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
     P: BlockPadding,
 {
     fn stream_decrypt<'a, R: Read, W: Write>(
@@ -234,34 +252,33 @@ where
         let n = self.s;
         let padding_blocks = self.padding.max_padding_blocks().max(1);
         let (tgt_len, mut out_len, mut buf) = (
-            padding_blocks.max(32) + padding_blocks,
+            (padding_blocks.max(32) + padding_blocks) * n,
             0,
             Vec::with_capacity(2048),
         );
 
         buf.extend(self.data.iter());
-        self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
         let mut itr = buf.chunks_exact(n);
         for chunk in &mut itr {
-            let d = Self::decrypt_inner(&self.cipher, self.iv.as_mut().unwrap(), chunk);
-            self.out_buf.push_back(d);
+            Self::decrypt_inner(&self.cipher, chunk, &mut self.iv, &mut self.out_buf)?;
             if self.out_buf.len() > tgt_len {
-                while self.out_buf.len() > padding_blocks {
-                    out_data
-                        .write_all(&self.out_buf.pop_front().unwrap()[..n])
-                        .map_err(CipherError::from)?;
-                    out_len += n;
-                }
+                let bound = self.out_buf.len() - n;
+                out_data
+                    .write_all(&self.out_buf[..bound])
+                    .map_err(CipherError::from)?;
+                self.out_buf.rotate_right(n);
+                self.out_buf.truncate(n);
+                out_len += bound;
             }
         }
+        self.data.clear();
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
             let mut itr = sf.data.chunks_exact(n);
             for data in &mut itr {
-                let d = Self::decrypt_inner(&sf.cipher, sf.iv.as_mut().unwrap(), data);
-                sf.out_buf.push_back(d);
+                Self::decrypt_inner(&sf.cipher, data, &mut sf.iv, &mut sf.out_buf)?;
             }
 
             let len = itr.remainder().len();
@@ -272,17 +289,14 @@ where
                     real: len,
                 })
             } else {
-                let mut buf = Vec::with_capacity(sf.out_buf.len() * n);
-                sf.out_buf.iter().for_each(|x| {
-                    buf.extend(&x[..n]);
-                });
-                sf.padding.unpadding(&mut buf)?;
+                sf.padding.unpadding(&mut sf.out_buf)?;
+                let last_len = sf.out_buf.len();
 
                 outdata
-                    .write_all(buf.as_slice())
+                    .write_all(sf.out_buf.as_slice())
                     .map_err(CipherError::from)?;
                 sf.clear_resource();
-                Ok(buf.len())
+                Ok(last_len)
             }
         });
 
@@ -369,9 +383,9 @@ mod tests {
     #[test]
     fn cfb_aes_empty_padding() {
         for (i, (s, key, iv, pt, ct)) in cases().into_iter().enumerate() {
-            let iv: [u8; AES::BLOCK_SIZE] = iv.try_into().unwrap();
             let mut cfb =
-                AESCfb::<EmptyPadding>::new(AES::new(key.as_slice()).unwrap(), iv, s).unwrap();
+                AESCfb::<EmptyPadding>::new(AES::new(key.as_slice()).unwrap(), iv.clone(), s)
+                    .unwrap();
 
             let mut data = pt.as_slice();
             let mut buf = vec![];
@@ -397,7 +411,7 @@ mod tests {
 
             let mut data = ct.as_slice();
             buf.clear();
-            cfb.set_iv(iv);
+            cfb.set_iv(iv.clone()).unwrap();
             let (in_len, out_len) = cfb
                 .stream_decrypt(&mut data, &mut buf)
                 .unwrap()
@@ -406,14 +420,14 @@ mod tests {
             assert_eq!(
                 in_len,
                 out_len,
-                "case {i} stream encrypt failed, key bits len: {}, s: {}",
+                "case {i} stream decrypt failed, key bits len: {}, s: {}",
                 key.len() << 3,
                 s
             );
             assert_eq!(
                 buf,
                 pt,
-                "case {i} stream encrypt failed, key bits len: {}, s: {}",
+                "case {i} stream decrypt failed, key bits len: {}, s: {}",
                 key.len() << 3,
                 s
             );
@@ -421,7 +435,7 @@ mod tests {
             let cfb: RefCell<_> = cfb.into();
 
             buf.clear();
-            cfb.borrow_mut().set_iv(iv);
+            cfb.borrow_mut().set_iv(iv.clone()).unwrap();
             cfb.encrypt(pt.as_slice(), &mut buf).unwrap();
             assert_eq!(
                 buf,
@@ -432,12 +446,12 @@ mod tests {
             );
 
             buf.clear();
-            cfb.borrow_mut().set_iv(iv);
+            cfb.borrow_mut().set_iv(iv).unwrap();
             cfb.decrypt(ct.as_slice(), &mut buf).unwrap();
             assert_eq!(
                 buf,
                 pt,
-                "case {i} stream encrypt failed, key bits len: {}, s: {}",
+                "case {i} stream decrypt failed, key bits len: {}, s: {}",
                 key.len() << 3,
                 s
             );
@@ -447,9 +461,8 @@ mod tests {
     #[test]
     fn cfb_aes_default_padding() {
         for (i, (s, key, iv, pt, ct)) in cases().into_iter().enumerate() {
-            let iv: [u8; AES::BLOCK_SIZE] = iv.try_into().unwrap();
             let aes = AES::new(key.as_slice()).unwrap();
-            let cfb: RefCell<_> = AESCfb::<DefaultPadding>::new(aes.clone(), iv, s)
+            let cfb: RefCell<_> = AESCfb::<DefaultPadding>::new(aes.clone(), iv.clone(), s)
                 .unwrap()
                 .into();
 
@@ -469,7 +482,7 @@ mod tests {
                 key.len() << 3
             );
 
-            cfb.borrow_mut().set_iv(iv);
+            cfb.borrow_mut().set_iv(iv.clone()).unwrap();
             let mut buf = vec![];
             cfb.decrypt(cfb_out.as_slice(), &mut buf).unwrap();
             assert_eq!(
