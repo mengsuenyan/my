@@ -1,7 +1,7 @@
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::CipherError::AEError;
 use crate::{
-    AuthenticationCipher, BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt,
+    AuthenticationCipher, BlockEncryptX, CipherError, StreamCipherFinish, StreamDecrypt,
     StreamEncrypt,
 };
 use std::fmt::Write as _;
@@ -40,7 +40,7 @@ pub type AES256Gcm = GCM<AES256>;
 
 impl<E> GCM<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     const R: u128 = 0b11100001u128 << 120;
 
@@ -48,6 +48,10 @@ where
         if mac_size > 16 {
             return Err(CipherError::AEError(
                 "Not support MAC length that great than 16".to_string(),
+            ));
+        } else if cipher.block_size_x() != 16 {
+            return Err(CipherError::AEError(
+                "only support the block cipher with the block size 16".to_string(),
             ));
         }
 
@@ -138,8 +142,10 @@ where
     ) -> Result<(usize, u128, Option<u128>), CipherError> {
         let mut slen = 0;
 
+        let mut tmp = vec![];
         for chunk in x.chunks(16) {
-            let mut tmp = self.cipher.encrypt_block(&cbi.to_be_bytes());
+            tmp.clear();
+            self.cipher.encrypt_block_x(&cbi.to_be_bytes(), &mut tmp)?;
             tmp.iter_mut().zip(chunk).for_each(|(a, &b)| {
                 *a ^= b;
             });
@@ -147,13 +153,9 @@ where
                 .map_err(CipherError::from)?;
 
             if let Some(si_cur) = si {
-                if chunk.len() == 16 {
-                    si = Some(Self::g_hash_inner(si_cur, tmp, h));
-                } else {
-                    let mut buf = [0u8; 16];
-                    buf[..chunk.len()].copy_from_slice(&tmp[..chunk.len()]);
-                    si = Some(Self::g_hash_inner(si_cur, buf, h));
-                }
+                let mut buf = [0u8; 16];
+                buf[..chunk.len()].copy_from_slice(&tmp[..chunk.len()]);
+                si = Some(Self::g_hash_inner(si_cur, buf, h));
             }
 
             slen += chunk.len();
@@ -164,7 +166,11 @@ where
     }
 
     fn gcm_ae_h(&self) -> u128 {
-        u128::from_be_bytes(self.cipher.encrypt_block(&[0u8; 16]))
+        let mut tmp = vec![];
+        self.cipher
+            .encrypt_block_x(&[0u8; 16], &mut tmp)
+            .expect("inner error");
+        u128::from_be_bytes(tmp.try_into().expect("inner error"))
     }
 
     fn gcm_ae_adata_hash(&self, adata: &[u8], h: u128) -> u128 {
@@ -203,7 +209,7 @@ where
 
 impl<E> AuthenticationCipher for GCM<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     fn mac_size(&self) -> usize {
         self.mac_size
@@ -328,7 +334,7 @@ pub type AES256GcmStream = GcmStream<AES256>;
 
 impl<E> GcmStream<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     // (j0, s0)
     fn init_para(gcm: &GCM<E>, nonce: &[u8], associated_data: &[u8], h: u128) -> (u128, u128) {
@@ -436,7 +442,7 @@ where
 
 impl<E> AuthenticationCipher for GcmStream<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     fn mac_size(&self) -> usize {
         self.gcm.mac_size()
@@ -467,7 +473,7 @@ where
 
 impl<E> StreamEncrypt for GcmStream<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     fn stream_encrypt<'a, R: Read, W: Write>(
         &'a mut self,
@@ -534,7 +540,7 @@ where
 
 impl<E> StreamDecrypt for GcmStream<E>
 where
-    E: BlockEncrypt<16>,
+    E: BlockEncryptX,
 {
     fn stream_decrypt<'a, R: Read, W: Write>(
         &'a mut self,

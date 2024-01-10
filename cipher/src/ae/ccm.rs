@@ -1,5 +1,5 @@
-use crate::block_cipher::{BlockCipher, AES, AES128, AES192, AES256};
-use crate::{AuthenticationCipher, BlockEncrypt, CipherError};
+use crate::block_cipher::{AES, AES128, AES192, AES256};
+use crate::{AuthenticationCipher, BlockEncryptX, CipherError};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 
@@ -45,25 +45,25 @@ use std::io::{Read, Write};
 /// - Y0 = CIPH_k(B0);
 /// - Y_i = CIPH_k(Bi ^ Y_{i-1}), i=1..r;
 /// - 验证`T`是否等于MSB_t(Y_r), 合法则返回P;
-pub struct CCM<E, const BLOCK_SIZE: usize> {
+pub struct CCM<E> {
     cipher: E,
     mac_size: usize,
 }
 
-pub type AESCcm = CCM<AES, { AES::BLOCK_SIZE }>;
-pub type AES128Ccm = CCM<AES128, { AES128::BLOCK_SIZE }>;
-pub type AES192Ccm = CCM<AES192, { AES192::BLOCK_SIZE }>;
-pub type AES256Ccm = CCM<AES256, { AES256::BLOCK_SIZE }>;
+pub type AESCcm = CCM<AES>;
+pub type AES128Ccm = CCM<AES128>;
+pub type AES192Ccm = CCM<AES192>;
+pub type AES256Ccm = CCM<AES256>;
 
-impl<E, const N: usize> CCM<E, N> {
-    /// `mac_size` MAC的字节长度, 需满足`mac_size <= N`.
+impl<E: BlockEncryptX> CCM<E> {
+    /// `mac_size` MAC的字节长度, 需满足`mac_size <= block_size`.
     pub fn new(cipher: E, mac_size: usize) -> Result<Self, CipherError> {
-        Self::check_mac_size(mac_size)?;
+        Self::check_mac_size(&cipher, mac_size)?;
 
         Ok(Self { cipher, mac_size })
     }
 
-    fn check_mac_size(mac_size: usize) -> Result<(), CipherError> {
+    fn check_mac_size(cipher: &E, mac_size: usize) -> Result<(), CipherError> {
         if !(mac_size == 4
             || mac_size == 6
             || mac_size == 8
@@ -75,8 +75,8 @@ impl<E, const N: usize> CCM<E, N> {
             Err(CipherError::AEError(format!(
                 "Invalid MAC length `{mac_size}`, it should be the one of `{{4,6,8,10,12,14,16}}`"
             )))
-        } else if N < mac_size {
-            Err(CipherError::AEError(format!("Invalid MAC length `{mac_size}, it should be less or equal to cipher block size `{N}`")))
+        } else if cipher.block_size_x() < mac_size {
+            Err(CipherError::AEError(format!("Invalid MAC length `{mac_size}, it should be less or equal to cipher block size `{}`", cipher.block_size_x())))
         } else {
             Ok(())
         }
@@ -122,28 +122,27 @@ impl<E, const N: usize> CCM<E, N> {
             | (Self::q_size(nonce_size) as u8 - 1)
     }
 
-    fn b0(&self, is_adata: bool, nonce: &[u8], payload: &[u8]) -> [u8; N] {
-        let mut b0 = [0u8; N];
-
+    fn b0(&self, is_adata: bool, nonce: &[u8], payload: &[u8], b0: &mut [u8]) {
         let q = Self::q_size(nonce.len());
         b0[0] = self.b0_flags(is_adata, nonce.len());
         b0[1..(1 + nonce.len())].copy_from_slice(nonce);
 
         let p = payload.len().to_be_bytes();
-        b0[(N - q)..]
+        b0[(self.cipher.block_size_x() - q)..]
             .iter_mut()
             .rev()
             .zip(p.into_iter().rev())
             .for_each(|(a, b)| {
                 *a = b;
             });
-
-        b0
     }
 
     // 返回编码后的长度, 调用者负责阶段
-    fn encode_adata_len(a: usize) -> Vec<u8> {
-        let (mut out, x) = (Vec::with_capacity(N), (a as u64).to_le_bytes());
+    fn encode_adata_len(&self, a: usize) -> Vec<u8> {
+        let (mut out, x) = (
+            Vec::with_capacity(self.cipher.block_size_x()),
+            (a as u64).to_le_bytes(),
+        );
 
         let l = if a < 0xff00 {
             2
@@ -164,24 +163,21 @@ impl<E, const N: usize> CCM<E, N> {
         out
     }
 
-    fn counter_val(nonce: &[u8], i: usize) -> [u8; N] {
-        let mut out = [0u8; N];
+    fn counter_val(&self, nonce: &[u8], i: usize, out: &mut [u8]) {
         let q = Self::q_size(nonce.len()) as u8;
         out[0] = q - 1;
         out[1..(1 + nonce.len())].copy_from_slice(nonce);
-        out[(N - q as usize)..]
+        out[(self.cipher.block_size_x() - q as usize)..]
             .iter_mut()
             .rev()
             .zip((i as u64).to_le_bytes())
             .for_each(|(a, b)| {
                 *a = b;
             });
-
-        out
     }
 }
 
-impl<E, const N: usize> Clone for CCM<E, N>
+impl<E> Clone for CCM<E>
 where
     E: Clone,
 {
@@ -193,54 +189,69 @@ where
     }
 }
 
-impl<E, const N: usize> CCM<E, N>
+impl<E> CCM<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     // 调用者负责截断到mac_size
-    fn mac(&self, nonce: &[u8], adata: &[u8], payload: &[u8]) -> Result<[u8; N], CipherError> {
+    fn mac(&self, nonce: &[u8], adata: &[u8], payload: &[u8]) -> Result<Vec<u8>, CipherError> {
         Self::check_para(nonce, payload)?;
+        let mut cipher = Vec::with_capacity(self.cipher.block_size_x());
+
         // B0
-        let b0 = self.b0(!adata.is_empty(), nonce, payload);
-        let mut yi = self.cipher.encrypt_block(&b0);
+        let mut b0 = vec![0u8; self.cipher.block_size_x()];
+        self.b0(!adata.is_empty(), nonce, payload, b0.as_mut_slice());
+        self.cipher.encrypt_block_x(b0.as_slice(), &mut cipher)?;
+
+        let fn_block_xor = |e: &E,
+                            data: &[u8],
+                            tmp: &mut Vec<u8>,
+                            cipher: &mut Vec<u8>|
+         -> Result<(), CipherError> {
+            let mut itr = data.chunks_exact(e.block_size_x());
+            for chunk in &mut itr {
+                chunk
+                    .iter()
+                    .zip(cipher.iter_mut())
+                    .for_each(|(&a, b)| *b ^= a);
+                tmp.clear();
+                tmp.append(cipher);
+                e.encrypt_block_x(tmp.as_slice(), cipher)?;
+            }
+
+            if !itr.remainder().is_empty() {
+                itr.remainder()
+                    .iter()
+                    .zip(cipher.iter_mut())
+                    .for_each(|(&a, b)| *b ^= a);
+                tmp.clear();
+                tmp.append(cipher);
+                e.encrypt_block_x(tmp.as_slice(), cipher)?;
+            }
+
+            Ok(())
+        };
 
         // B1...Bu
         if !adata.is_empty() {
-            let (mut cnt, b1) = (0, Self::encode_adata_len(adata.len()));
+            let (mut b1, tmp) = (self.encode_adata_len(adata.len()), &mut b0);
+            b1.extend_from_slice(adata);
             // 最后需要补0对齐到N的整数倍, 又由于和0异或亦是自身所以不用处理
-            for &x in b1.iter().chain(adata) {
-                yi[cnt] ^= x;
-                cnt += 1;
-                if cnt == N {
-                    cnt = 0;
-                    yi = self.cipher.encrypt_block(&yi);
-                }
-            }
-
-            if cnt % N != 0 {
-                yi = self.cipher.encrypt_block(&yi);
-            }
+            fn_block_xor(&self.cipher, b1.as_slice(), tmp, &mut cipher)?;
         }
 
         // payload
-        let mut cnt = 0;
-        for &x in payload.iter() {
-            yi[cnt] ^= x;
-            cnt += 1;
-            if cnt == N {
-                cnt = 0;
-                yi = self.cipher.encrypt_block(&yi);
-            }
-        }
-
-        if cnt % N != 0 {
-            yi = self.cipher.encrypt_block(&yi);
-        }
+        let tmp = &mut b0;
+        fn_block_xor(&self.cipher, payload, tmp, &mut cipher)?;
 
         // T ^ S_0
-        let mut s0 = self.cipher.encrypt_block(&Self::counter_val(nonce, 0));
+        tmp.clear();
+        tmp.resize(self.cipher.block_size_x(), 0);
+        self.counter_val(nonce, 0, tmp.as_mut_slice());
+        let mut s0 = Vec::with_capacity(self.cipher.block_size_x());
+        self.cipher.encrypt_block_x(tmp.as_slice(), &mut s0)?;
         s0.iter_mut()
-            .zip(yi)
+            .zip(cipher)
             .take(self.mac_size)
             .for_each(|(a, b)| {
                 *a ^= b;
@@ -250,9 +261,9 @@ where
     }
 }
 
-impl<E, const N: usize> AuthenticationCipher for CCM<E, N>
+impl<E> AuthenticationCipher for CCM<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn mac_size(&self) -> usize {
         self.mac_size
@@ -273,8 +284,13 @@ where
         let mac = self.mac(nonce, associated_data, payload.as_slice())?;
 
         //Sj
-        for (i, chunk) in payload.chunks(N).enumerate() {
-            let mut sj = self.cipher.encrypt_block(&Self::counter_val(nonce, i + 1));
+        let (mut cnt, mut sj) = (vec![], vec![]);
+        for (i, chunk) in payload.chunks(self.cipher.block_size_x()).enumerate() {
+            cnt.clear();
+            cnt.resize(self.cipher.block_size_x(), 0);
+            self.counter_val(nonce, i + 1, cnt.as_mut_slice());
+            sj.clear();
+            self.cipher.encrypt_block_x(cnt.as_slice(), &mut sj)?;
             // P ^ Sj
             sj.iter_mut().zip(chunk).for_each(|(a, &b)| {
                 *a ^= b;
@@ -314,10 +330,15 @@ where
         Self::check_payload_size(nonce.len(), ciphertext.len() - self.mac_size)?;
 
         // payload
-        let l = ciphertext.len();
-        for (i, chunk) in ciphertext[..(l - self.mac_size)].chunks_mut(N).enumerate() {
-            let sj = self.cipher.encrypt_block(&Self::counter_val(nonce, i + 1));
-            chunk.iter_mut().zip(sj).for_each(|(a, b)| {
+        let (l, n, mut cnt, mut sj) =
+            (ciphertext.len(), self.cipher.block_size_x(), vec![], vec![]);
+        for (i, chunk) in ciphertext[..(l - self.mac_size)].chunks_mut(n).enumerate() {
+            cnt.clear();
+            cnt.resize(n, 0);
+            self.counter_val(nonce, i + 1, cnt.as_mut_slice());
+            sj.clear();
+            self.cipher.encrypt_block_x(cnt.as_slice(), &mut sj)?;
+            chunk.iter_mut().zip(sj.iter()).for_each(|(a, &b)| {
                 *a ^= b;
             });
         }

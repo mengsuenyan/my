@@ -13,7 +13,7 @@
 use cipher::block_cipher::AES256;
 use cipher::cipher_mode::AES256Ofb;
 use cipher::stream_cipher::StreamCipherX;
-use cipher::BlockCipher;
+use cipher::{BlockCipher, CipherError};
 use crypto_hash::cshake::CSHAKE256;
 use crypto_hash::{DigestX, HasherBuilder, HasherType, XOF};
 use std::io::Write;
@@ -27,6 +27,7 @@ pub struct SkyEncryptPara {
     key: String,
 }
 
+#[allow(clippy::type_complexity)]
 pub struct SkyEncrypt {
     digest: Box<dyn DigestX>,
     cipher: Box<dyn StreamCipherX>,
@@ -34,7 +35,7 @@ pub struct SkyEncrypt {
     cipher_name: String,
     key: Vec<u8>,
     iv_cshake: CSHAKE256,
-    update_iv: Option<Box<dyn Fn(Vec<u8>)>>,
+    update_iv: Option<Box<dyn Fn(Vec<u8>) -> Result<(), CipherError>>>,
 }
 
 impl Default for SkyEncryptPara {
@@ -76,7 +77,14 @@ impl SkyEncryptPara {
     #[allow(clippy::type_complexity)]
     fn aes256_ofb(
         master_key: &[u8],
-    ) -> Result<(CSHAKE256, Box<dyn StreamCipherX>, Box<dyn Fn(Vec<u8>)>), String> {
+    ) -> Result<
+        (
+            CSHAKE256,
+            Box<dyn StreamCipherX>,
+            Box<dyn Fn(Vec<u8>) -> Result<(), CipherError>>,
+        ),
+        String,
+    > {
         let mut cshake = CSHAKE256::new(
             AES256::KEY_SIZE,
             "aes256/ofb".as_bytes(),
@@ -97,30 +105,16 @@ impl SkyEncryptPara {
         iv_cshake
             .write_all(master_key)
             .map_err(|e| format!("{e}"))?;
-        let mut iv = iv_cshake.finalize();
-        let cipher = AES256Ofb::new(
-            block_cipher,
-            iv.as_slice().try_into().map_err(|e| format!("{e}"))?,
-        );
-        iv.zeroize();
+        let iv = iv_cshake.finalize();
+        let cipher = AES256Ofb::new(block_cipher, iv).map_err(|e| format!("{e}"))?;
 
         let ofb = Arc::new(Mutex::new(cipher));
         let x = ofb.clone();
-        let f = move |data: Vec<u8>| {
-            let iv = match data.as_slice().try_into() {
-                Ok(x) => x,
-                Err(e) => {
-                    log::error!("AES256Ofb IV convert from slice failed: {e}");
-                    return;
-                }
-            };
-
-            match x.lock() {
-                Ok(mut x) => x.set_iv(iv),
-                Err(e) => {
-                    log::error!("AES256Ofb set_iv failed due to: {e}");
-                }
-            }
+        let f = move |iv: Vec<u8>| match x.lock() {
+            Ok(mut x) => x.set_iv(iv),
+            Err(e) => Err(CipherError::Other(format!(
+                "AES256Ofb set_iv failed due to: {e}"
+            ))),
         };
 
         Ok((iv_cshake, Box::new(ofb), Box::new(f)))
@@ -147,7 +141,7 @@ impl SkyEncryptPara {
         let (iv_cshake, cipher, update_iv): (
             CSHAKE256,
             Box<dyn StreamCipherX>,
-            Option<Box<dyn Fn(Vec<u8>)>>,
+            Option<Box<dyn Fn(Vec<u8>) -> Result<(), CipherError>>>,
         ) = match self.cipher_name.as_str() {
             "aes256/ofb" => {
                 let (x, y, z) = Self::aes256_ofb(master_key.as_slice())?;
@@ -341,7 +335,7 @@ impl SkyEncrypt {
             self.iv_cshake
                 .write_all(header.file_len.to_be_bytes().as_slice())?;
             let iv = self.iv_cshake.finish_x();
-            update_iv(iv);
+            update_iv(iv)?;
         }
 
         let mut data = header.into_vec();
@@ -363,7 +357,7 @@ impl SkyEncrypt {
             self.iv_cshake
                 .write_all(header.file_len.to_be_bytes().as_slice())?;
             let iv = self.iv_cshake.finish_x();
-            update_iv(iv);
+            update_iv(iv)?;
         }
 
         let mut data = Vec::with_capacity(1024);

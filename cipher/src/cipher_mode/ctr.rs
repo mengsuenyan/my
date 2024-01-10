@@ -11,18 +11,17 @@
 //! 在CTR工作模式中, 如果每个$T_i$能提前计算出来, 那么加解密可以并行.
 //!
 
-use crate::block_cipher::{BlockCipher, AES, AES128, AES192, AES256};
+use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::Counter;
-use crate::{BlockEncrypt, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
+use crate::{BlockEncryptX, CipherError, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
 use std::io::{Read, Write};
-use utils::Block;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
 /// The Counter Mode(CTR) <br>
 ///
 /// 给定计数器`C`, 其生成的计数值$T_i$每个都需要是相异的, 且需要是保密的. <br>
-pub struct CTR<C, E, const BLOCK_SIZE: usize> {
+pub struct CTR<C, E> {
     //缓存输入数据
     data: Vec<u8>,
     counter: Option<C>,
@@ -38,7 +37,7 @@ def_type_block_cipher!(
     [AES256Ctr, AES256]
 );
 
-impl<C, E, const N: usize> CTR<C, E, N> {
+impl<C, E> CTR<C, E> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
@@ -71,9 +70,9 @@ impl<C, E, const N: usize> CTR<C, E, N> {
     }
 }
 
-impl<C: Counter, E, const N: usize> CTR<C, E, N> {
+impl<C: Counter, E: BlockEncryptX> CTR<C, E> {
     pub fn new(cipher: E, counter: C) -> Result<Self, CipherError> {
-        if counter.iv_bytes() < N {
+        if counter.iv_bytes() < cipher.block_size_x() {
             return Err(CipherError::InvalidCounter {
                 len: counter.iv_bytes(),
                 is_iv: true,
@@ -81,7 +80,7 @@ impl<C: Counter, E, const N: usize> CTR<C, E, N> {
         }
 
         Ok(Self {
-            data: Vec::with_capacity(N),
+            data: Vec::with_capacity(cipher.block_size_x()),
             counter: Some(counter),
             cipher,
             is_encrypt: None,
@@ -89,7 +88,7 @@ impl<C: Counter, E, const N: usize> CTR<C, E, N> {
     }
 
     pub fn set_counter(&mut self, counter: C) -> Result<(), CipherError> {
-        if counter.iv_bytes() < N {
+        if counter.iv_bytes() < self.cipher.block_size_x() {
             Err(CipherError::InvalidCounter {
                 len: counter.iv_bytes(),
                 is_iv: true,
@@ -102,7 +101,7 @@ impl<C: Counter, E, const N: usize> CTR<C, E, N> {
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<C, E, const N: usize> Zeroize for CTR<C, E, N>
+impl<C, E> Zeroize for CTR<C, E>
 where
     E: Zeroize,
 {
@@ -112,28 +111,46 @@ where
     }
 }
 
-impl<C, E, const N: usize> CTR<C, E, N>
+impl<C, E> CTR<C, E>
 where
     C: Counter,
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     // 调用者负责输出截断为`data.len()`
-    fn encrypt_inner(sf: &E, counter: &mut C, data: &[u8]) -> Option<[u8; N]> {
-        counter.count().map(|tj| {
-            let arr = Block::as_arr_ref_uncheck(&tj.as_slice()[..N]);
-            let mut oj = sf.encrypt_block(arr);
-            oj.iter_mut().zip(data.iter()).for_each(|(a, b)| {
-                *a ^= b;
+    fn encrypt_inner(
+        sf: &E,
+        counter: &mut C,
+        data: &[u8],
+        cdata: &mut Vec<u8>,
+    ) -> Result<(), CipherError> {
+        let Some(cnt) = counter.count() else {
+            return Err(CipherError::InvalidCounter {
+                len: 0,
+                is_iv: false,
             });
-            oj
-        })
+        };
+
+        if cnt.len() != sf.block_size_x() {
+            return Err(CipherError::InvalidCounter {
+                len: cnt.len(),
+                is_iv: false,
+            });
+        }
+
+        cdata.clear();
+        sf.encrypt_block_x(cnt.as_slice(), cdata)?;
+        cdata
+            .iter_mut()
+            .zip(data.iter())
+            .for_each(|(a, &b)| *a ^= b);
+        Ok(())
     }
 }
 
-impl<C, E, const N: usize> CTR<C, E, N>
+impl<C, E> CTR<C, E>
 where
     C: Counter,
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_inner<'a, R: Read, W: Write>(
         &'a mut self,
@@ -143,41 +160,40 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(is_encrypt)?;
         self.check_counter()?;
-        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        let (mut buf, mut out_len, n) = (Vec::with_capacity(2048), 0, self.cipher.block_size_x());
 
         buf.extend(self.data.iter());
         self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
 
-        let mut itr = buf.chunks_exact(N);
+        let mut itr = buf.chunks_exact(n);
         for chunk in &mut itr {
-            let d = Self::encrypt_inner(&self.cipher, self.counter.as_mut().unwrap(), chunk)
-                .ok_or(CipherError::InvalidCounter {
-                    len: out_len % N,
-                    is_iv: false,
-                })?;
+            Self::encrypt_inner(
+                &self.cipher,
+                self.counter.as_mut().unwrap(),
+                chunk,
+                &mut self.data,
+            )?;
             out_data
-                .write_all(d.as_slice())
+                .write_all(self.data.as_slice())
                 .map_err(CipherError::from)?;
-            out_len += N;
+            out_len += n;
         }
-
+        self.data.clear();
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(self, (in_len, out_len), move |sf, outdata: &mut W| {
             let mut s = 0;
             if !sf.data.is_empty() {
-                let d = Self::encrypt_inner(
+                let mut buf = vec![];
+                Self::encrypt_inner(
                     &sf.cipher,
                     sf.counter.as_mut().unwrap(),
                     sf.data.as_slice(),
-                )
-                .ok_or(CipherError::InvalidCounter {
-                    len: out_len % N,
-                    is_iv: false,
-                })?;
+                    &mut buf,
+                )?;
                 outdata
-                    .write_all(&d.as_slice()[..sf.data.len()])
+                    .write_all(&buf[..sf.data.len()])
                     .map_err(CipherError::from)?;
                 s += sf.data.len();
             }
@@ -190,10 +206,10 @@ where
     }
 }
 
-impl<C, E, const N: usize> StreamEncrypt for CTR<C, E, N>
+impl<C, E> StreamEncrypt for CTR<C, E>
 where
     C: Counter,
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_encrypt<'a, R: Read, W: Write>(
         &'a mut self,
@@ -204,10 +220,10 @@ where
     }
 }
 
-impl<C, E, const N: usize> StreamDecrypt for CTR<C, E, N>
+impl<C, E> StreamDecrypt for CTR<C, E>
 where
     C: Counter,
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn stream_decrypt<'a, R: Read, W: Write>(
         &'a mut self,

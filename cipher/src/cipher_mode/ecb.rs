@@ -15,21 +15,19 @@
 use crate::block_cipher::{AES, AES128, AES192, AES256};
 use crate::cipher_mode::BlockPadding;
 use crate::stream_cipher::StreamCipherFinish;
-use crate::{BlockCipher, BlockDecrypt, BlockEncrypt, CipherError, StreamDecrypt, StreamEncrypt};
-use std::collections::VecDeque;
+use crate::{BlockDecryptX, BlockEncryptX, CipherError, StreamDecrypt, StreamEncrypt};
 use std::io::{Read, Write};
-use utils::Block;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
 /// Electronic Codebook Mode <br>
 ///
 /// `ECB<Padding, BlockCipher, BLOCK_SIZE>`
-pub struct ECB<P, E, const BLOCK_SIZE: usize> {
+pub struct ECB<P, E> {
     //缓存输入数据
     data: Vec<u8>,
     //缓存输出数据
-    out_buf: VecDeque<[u8; BLOCK_SIZE]>,
+    out_buf: Vec<u8>,
     cipher: E,
     padding: P,
     is_encrypt: Option<bool>,
@@ -45,7 +43,7 @@ def_type_block_cipher!(
 
 impl_set_working_flag!(ECB);
 
-impl<P, E, const N: usize> ECB<P, E, N> {
+impl<P, E> ECB<P, E> {
     fn clear_resource(&mut self) {
         self.is_encrypt = None;
         self.data.clear();
@@ -53,16 +51,17 @@ impl<P, E, const N: usize> ECB<P, E, N> {
     }
 }
 
-impl<P, E, const BLOCK_SIZE: usize> ECB<P, E, BLOCK_SIZE>
+impl<P, E> ECB<P, E>
 where
     P: BlockPadding,
+    E: BlockEncryptX,
 {
     pub fn new(cipher: E) -> Self {
         Self {
-            data: Vec::with_capacity(BLOCK_SIZE),
-            out_buf: VecDeque::new(),
+            data: Vec::new(),
+            out_buf: Vec::new(),
+            padding: P::new(cipher.block_size_x()),
             cipher,
-            padding: P::new(BLOCK_SIZE),
             is_encrypt: None,
         }
     }
@@ -73,7 +72,7 @@ where
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<P, E, const N: usize> Zeroize for ECB<P, E, N>
+impl<P, E> Zeroize for ECB<P, E>
 where
     E: Zeroize,
 {
@@ -83,9 +82,9 @@ where
     }
 }
 
-impl<P, E, const N: usize> StreamEncrypt for ECB<P, E, N>
+impl<P, E> StreamEncrypt for ECB<P, E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
     P: BlockPadding,
 {
     fn stream_encrypt<'a, R: Read, W: Write>(
@@ -95,38 +94,43 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(true)?;
 
-        let (mut buf, mut out_len) = (Vec::with_capacity(2048), 0);
+        let (mut buf, mut out_len, n) = (Vec::with_capacity(2048), 0, self.cipher.block_size_x());
         buf.extend(self.data.iter());
         self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut itr = buf.chunks_exact(N);
+        let (mut itr, mut cipher) = (buf.chunks_exact(n), vec![]);
         for chunk in &mut itr {
-            let d = self.cipher.encrypt_block(Block::as_arr_ref_uncheck(chunk));
+            cipher.clear();
+            self.cipher.encrypt_block_x(chunk, &mut cipher)?;
             out_data
-                .write_all(d.as_slice())
+                .write_all(cipher.as_slice())
                 .map_err(CipherError::from)?;
-            out_len += N;
+            out_len += n;
         }
         self.data.extend(itr.remainder());
 
         let s = StreamCipherFinish::new(
             self,
             (in_len, out_len),
-            |sf: &mut ECB<P, E, N>, outdata: &mut W| {
+            |sf: &mut ECB<P, E>, outdata: &mut W| {
                 sf.padding.padding(sf.data.as_mut());
 
-                let (mut itr, mut s) = (sf.data.chunks_exact(N), 0);
+                let n = sf.cipher.block_size_x();
+                let (mut itr, mut s, mut cipher) = (sf.data.chunks_exact(n), 0, vec![]);
                 for chunk in &mut itr {
-                    let d = sf.cipher.encrypt_block(Block::as_arr_ref_uncheck(chunk));
-                    outdata.write_all(d.as_slice()).map_err(CipherError::from)?;
-                    s += N;
+                    cipher.clear();
+                    sf.cipher.encrypt_block_x(chunk, &mut cipher)?;
+                    outdata
+                        .write_all(cipher.as_slice())
+                        .map_err(CipherError::from)?;
+                    s += n;
                 }
 
                 let len = itr.remainder().len();
                 sf.clear_resource();
                 if len > 0 {
                     Err(CipherError::InvalidBlockSize {
-                        target: N,
+                        target: n,
                         real: len,
                     })
                 } else {
@@ -139,9 +143,9 @@ where
     }
 }
 
-impl<P, E, const N: usize> StreamDecrypt for ECB<P, E, N>
+impl<P, E> StreamDecrypt for ECB<P, E>
 where
-    E: BlockDecrypt<N>,
+    E: BlockDecryptX,
     P: BlockPadding,
 {
     fn stream_decrypt<'a, R: Read, W: Write>(
@@ -151,9 +155,12 @@ where
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError> {
         self.set_working_flag(false)?;
 
-        let padding_blocks = self.padding.max_padding_blocks().max(1);
+        let (padding_blocks, n) = (
+            self.padding.max_padding_blocks().max(1),
+            self.cipher.block_size_x(),
+        );
         let (tgt_len, mut out_len, mut buf) = (
-            padding_blocks.max(32) + padding_blocks,
+            (padding_blocks.max(32) + padding_blocks) * n,
             0,
             Vec::with_capacity(2048),
         );
@@ -161,45 +168,45 @@ where
         buf.extend(self.data.iter());
         self.data.clear();
         let in_len = in_data.read_to_end(&mut buf).map_err(CipherError::from)?;
-        let mut itr = buf.chunks_exact(N);
+        let mut itr = buf.chunks_exact(n);
         for chunk in &mut itr {
-            let d = self.cipher.decrypt_block(Block::as_arr_ref_uncheck(chunk));
-            self.out_buf.push_back(d);
+            self.cipher.decrypt_block_x(chunk, &mut self.out_buf)?;
             if self.out_buf.len() > tgt_len {
-                while self.out_buf.len() > padding_blocks {
-                    out_data
-                        .write_all(&self.out_buf.pop_front().unwrap())
-                        .map_err(CipherError::from)?;
-                    out_len += N;
-                }
+                let bound = self.out_buf.len() - n;
+                out_data
+                    .write_all(&self.out_buf[..bound])
+                    .map_err(CipherError::from)?;
+                self.out_buf.rotate_right(n);
+                self.out_buf.truncate(n);
+                out_len += bound;
             }
         }
         self.data.extend(itr.remainder());
 
         let s =
             StreamCipherFinish::new(self, (in_len, out_len), |sf: &mut Self, outdata: &mut W| {
-                let mut itr = sf.data.chunks_exact(N);
+                let n = sf.cipher.block_size_x();
+                let mut itr = sf.data.chunks_exact(n);
                 for chunk in &mut itr {
-                    let d = sf.cipher.decrypt_block(Block::as_arr_ref_uncheck(chunk));
-                    sf.out_buf.push_back(d);
+                    sf.cipher.decrypt_block_x(chunk, &mut sf.out_buf)?;
                 }
 
                 let len = itr.remainder().len();
                 if len > 0 {
                     sf.clear_resource();
                     Err(CipherError::InvalidBlockSize {
-                        target: N,
+                        target: n,
                         real: len,
                     })
                 } else {
-                    let mut buf = sf.out_buf.iter().copied().flatten().collect::<Vec<_>>();
-                    sf.padding.unpadding(&mut buf)?;
+                    sf.padding.unpadding(&mut sf.out_buf)?;
+                    let last_len = sf.out_buf.len();
 
                     outdata
-                        .write_all(buf.as_slice())
+                        .write_all(sf.out_buf.as_slice())
                         .map_err(CipherError::from)?;
                     sf.clear_resource();
-                    Ok(buf.len())
+                    Ok(last_len)
                 }
             });
 
