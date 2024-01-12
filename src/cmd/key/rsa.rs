@@ -2,9 +2,9 @@ use crate::cmd::Cmd;
 use cipher::rsa::PrivateKey;
 use cipher::DefaultRand;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::PathBuf;
+
+use super::write_to_file_or_stdout;
 
 #[derive(Default)]
 pub struct RSACmd;
@@ -61,21 +61,9 @@ impl Cmd for RSACmd {
             m.get_one::<usize>("test").copied().unwrap(),
         );
 
-        let mut out: Box<dyn Write> = match m.get_one::<PathBuf>("output") {
-            Some(p) => {
-                let f = OpenOptions::new()
-                    .create_new(true)
-                    .write(true)
-                    .open(p)
-                    .unwrap();
-                Box::new(f)
-            }
-            None => Box::new(std::io::stdout().lock()),
-        };
-
         let mut rng = DefaultRand::default();
         let key = PrivateKey::generate_multi_prime_key(primes, bits, rounds, &mut rng).unwrap();
         let key = serde_json::to_string_pretty(&key).unwrap();
-        out.write_all(key.as_bytes()).unwrap();
+        write_to_file_or_stdout(m, key.as_bytes()).unwrap()
     }
 }

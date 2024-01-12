@@ -54,7 +54,7 @@ impl Cmd for HMACCmd {
             vec![]
         };
 
-        let mut hmac = self.generate_hmac(m);
+        let mut hmac = self.generate_hmac(m).unwrap();
         hmac.write_all(&msg).unwrap();
         hmac.write_all(&content).unwrap();
         let mac = BigUint::from_bytes_be(hmac.mac().as_slice());
@@ -63,15 +63,15 @@ impl Cmd for HMACCmd {
 }
 
 impl HMACCmd {
-    fn generate_hmac(&self, m: &ArgMatches) -> HMAC<Box<dyn DigestX>> {
+    pub fn generate_hmac(&self, m: &ArgMatches) -> anyhow::Result<HMAC<Box<dyn DigestX>>> {
         let Some((HashCmd::NAME, hm)) = m.subcommand() else {
-            panic!("need to specification hash function")
+            anyhow::bail!("need to specification hash function")
         };
 
-        let hasher = HashCmd::new(&[]).hasher_cmd(hm).generate_hasher().unwrap();
+        let hasher = HashCmd::new(&[]).hasher_cmd(hm).generate_hasher()?;
 
-        let key = std::fs::read(m.get_one::<PathBuf>("key").unwrap()).unwrap();
+        let key = std::fs::read(m.get_one::<PathBuf>("key").unwrap())?;
 
-        HMAC::new(hasher, key).unwrap()
+        Ok(HMAC::new(hasher, key)?)
     }
 }

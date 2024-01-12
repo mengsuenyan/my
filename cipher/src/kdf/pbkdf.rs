@@ -22,6 +22,7 @@ pub struct PBKDF1<D: DigestX> {
 pub struct PBKDF2<P: PRF> {
     hlen: usize,
     itr_cnt: usize,
+    password: Vec<u8>,
     salt: Vec<u8>,
     prf: P,
 }
@@ -74,10 +75,10 @@ impl<P: PRF> PBKDF2<P> {
             ));
         }
 
-        prf.update_key(password)?;
         Ok(Self {
             hlen,
             salt,
+            password,
             itr_cnt: iteration_count,
             prf,
         })
@@ -104,7 +105,7 @@ impl<D: DigestX> KDF for PBKDF1<D> {
         (self.hf.digest_bits_x() + 7) >> 3
     }
 
-    fn kdf(mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
+    fn kdf(&mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
         if key_size > self.max_key_size() {
             return Err(CipherError::InvalidKeySize {
                 target: Some(key_size),
@@ -128,7 +129,7 @@ impl<P: PRF> KDF for PBKDF2<P> {
         u32::MAX as usize * self.hlen
     }
 
-    fn kdf(mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
+    fn kdf(&mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
         if key_size == 0 {
             return Err(CipherError::Other("key size can not be zero".to_string()));
         } else if key_size > self.max_key_size() {
@@ -137,6 +138,8 @@ impl<P: PRF> KDF for PBKDF2<P> {
                 real: self.max_key_size(),
             });
         }
+
+        self.prf.update_key(self.password.clone())?;
 
         let l = (key_size + self.hlen - 1) / self.hlen;
         let mut f = vec![];
@@ -174,7 +177,7 @@ mod tests {
         let salt = BigUint::from_str_radix("aaef2d3f4d77ac66e9c5a6c3d8f921d1", 16)
             .unwrap()
             .to_bytes_be();
-        let pbkdf2 =
+        let mut pbkdf2 =
             PBKDF2::new(hmac.clone(), "p@$Sw0rD~1".as_bytes().to_vec(), salt, 50000).unwrap();
         let key = pbkdf2.kdf(32).unwrap();
         let tgt = BigUint::from_str_radix(
@@ -185,7 +188,7 @@ mod tests {
         .to_bytes_be();
         assert_eq!(key, tgt);
 
-        let pbkdf2 = PBKDF2::new(
+        let mut pbkdf2 = PBKDF2::new(
             hmac.clone(),
             "passwd".as_bytes().to_vec(),
             "salt".as_bytes().to_vec(),
@@ -202,7 +205,7 @@ mod tests {
         let key = pbkdf2.kdf(64).unwrap();
         assert_eq!(key, tgt);
 
-        let pbkdf2 = PBKDF2::new(
+        let mut pbkdf2 = PBKDF2::new(
             hmac.clone(),
             "Password".as_bytes().to_vec(),
             "NaCl".as_bytes().to_vec(),
