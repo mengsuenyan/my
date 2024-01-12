@@ -59,6 +59,7 @@ impl Cmd for RSACmd {
                     .help("to specify the output file path to save the signature"),
             )
             .subcommand(HashCmd::cmd())
+            .subcommand_required(true)
     }
 
     fn run(&self, m: &ArgMatches) {

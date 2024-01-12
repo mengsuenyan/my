@@ -57,3 +57,8 @@ pub use key::KeyCmd;
 
 mod sign;
 pub use sign::SignCmd;
+
+mod crypto;
+
+pub mod mac;
+pub use mac::MACCmd;
