@@ -23,6 +23,6 @@ mod hmac;
 pub use hmac::HMAC;
 
 mod kmac;
-pub use kmac::{KMAC, KMACXof};
+pub use kmac::{KMACXof, KMAC};
 
 pub use crate::stream_cipher::zuc::{ZUCMac, ZUCStdMac};

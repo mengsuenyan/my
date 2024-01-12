@@ -17,7 +17,7 @@ macro_rules! impl_cshake_cmd {
                         Arg::new("size")
                             .long("size")
                             .short('s')
-                            .value_parser(value_parser!(usize))
+                            .value_parser(value_parser!(u64))
                             .action(ArgAction::Set)
                             .required(true)
                             .help("digest bits length"),

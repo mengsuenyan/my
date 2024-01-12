@@ -13,6 +13,7 @@ impl Cmd for SignCmd {
         Command::new(Self::NAME)
             .about("signer")
             .subcommand(RSACmd::cmd())
+            .subcommand_required(true)
     }
 
     fn run(&self, m: &ArgMatches) {

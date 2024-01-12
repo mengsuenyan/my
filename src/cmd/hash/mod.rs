@@ -221,6 +221,7 @@ impl Cmd for HashCmd {
             .subcommand(BLAKE2s256Cmd::cmd())
             .subcommand(BLAKE2bCmd::cmd())
             .subcommand(BLAKE2sCmd::cmd())
+            .subcommand_required(true)
     }
 
     fn run(&self, m: &ArgMatches) {

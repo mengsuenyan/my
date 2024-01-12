@@ -18,7 +18,7 @@ macro_rules! impl_desired_len_hash {
                         Arg::new("size")
                             .long("size")
                             .short('s')
-                            .value_parser(value_parser!(usize))
+                            .value_parser(value_parser!(u64))
                             .action(ArgAction::Set)
                             .required(true)
                             .help("digest bits length"),
