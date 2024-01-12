@@ -8,24 +8,24 @@
 //!   - MAC验证
 //!
 
-use crate::{BlockEncrypt, CipherError, MAC};
+use crate::{BlockEncryptX, CipherError, MAC};
 use std::io::Write;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
-pub struct CMAC<E, const N: usize> {
-    k1: [u8; N],
-    k2: [u8; N],
-    buf: [u8; N],
+pub struct CMAC<E> {
+    k1: Vec<u8>,
+    k2: Vec<u8>,
+    buf: Vec<u8>,
     // C_i
-    ci: [u8; N],
+    ci: Vec<u8>,
     // 下一个可以存放数据的索引
     buf_idx: usize,
     cipher: E,
     is_finalize: bool,
 }
 
-impl<E, const N: usize> CMAC<E, N> {
+impl<E: BlockEncryptX> CMAC<E> {
     // https://op.dr.eck.cologne/en/theme/crypto_karisik/eax_cmac_problem.shtml
     // Block size 	Calculation 	Polynomal (hex) 	Polynomal (bit)
     // 32 	2^7+2^3+2^2+1 	0x8D 	10001101
@@ -44,8 +44,8 @@ impl<E, const N: usize> CMAC<E, N> {
     // 768 	2^19+2^17+2^4+1 	0xA0011 	10100000000000010001
     // 1024 	2^19+2^6+2^1+1 	0x80043 	10000000000001000011
     // 2048 	2^19+2^14+2^13+1 	0x86001 	10000110000000000001
-    const fn rb() -> Option<[u8; 4]> {
-        match N {
+    const fn rb(n: usize) -> Option<[u8; 4]> {
+        match n {
             4 => Some(0x8du32.to_be_bytes()),
             6 => Some(0x2du32.to_be_bytes()),
             8 => Some(0x1bu32.to_be_bytes()),
@@ -66,7 +66,7 @@ impl<E, const N: usize> CMAC<E, N> {
         }
     }
 
-    fn shl_arr(mut arr: [u8; N], bits: usize) -> [u8; N] {
+    fn shl_arr(mut arr: Vec<u8>, bits: usize) -> Vec<u8> {
         let mut lsb = 0;
         let r = 8 - bits;
         arr.iter_mut().rev().for_each(|x| {
@@ -79,18 +79,19 @@ impl<E, const N: usize> CMAC<E, N> {
     }
 }
 
-impl<E, const N: usize> CMAC<E, N>
+impl<E> CMAC<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     pub fn new(cipher: E) -> Result<Self, CipherError> {
         let (k1, k2) = Self::subkey(&cipher)?;
 
+        let n = cipher.block_size_x();
         Ok(Self {
             k1,
             k2,
-            buf: [0u8; N],
-            ci: [0u8; N],
+            buf: vec![0u8; n],
+            ci: vec![0u8; n],
             buf_idx: 0,
             cipher,
             is_finalize: false,
@@ -98,12 +99,14 @@ where
     }
 
     // (k1, k2)
-    fn subkey(cipher: &E) -> Result<([u8; N], [u8; N]), CipherError> {
-        let rb = Self::rb().ok_or(CipherError::Other(format!(
-            "CMAC Rb parameter not support {N} block size"
+    fn subkey(cipher: &E) -> Result<(Vec<u8>, Vec<u8>), CipherError> {
+        let n = cipher.block_size_x();
+        let rb = Self::rb(n).ok_or(CipherError::Other(format!(
+            "CMAC Rb parameter not support {n} block size"
         )))?;
 
-        let l = cipher.encrypt_block(&[0; N]);
+        let (mut l, zero) = (Vec::with_capacity(n), vec![0u8; n]);
+        cipher.encrypt_block_x(zero.as_slice(), &mut l)?;
 
         let k1 = if (l[0] & 0x80) == 0 {
             Self::shl_arr(l, 1)
@@ -119,9 +122,9 @@ where
         };
 
         let k2 = if (k1[0] & 0x80) == 0 {
-            Self::shl_arr(k1, 1)
+            Self::shl_arr(k1.clone(), 1)
         } else {
-            let mut k1 = Self::shl_arr(k1, 1);
+            let mut k1 = Self::shl_arr(k1.clone(), 1);
             k1.iter_mut()
                 .rev()
                 .zip(rb.into_iter().rev())
@@ -135,22 +138,22 @@ where
     }
 }
 
-impl<E: Clone, const N: usize> Clone for CMAC<E, N> {
+impl<E: Clone> Clone for CMAC<E> {
     fn clone(&self) -> Self {
         Self {
             buf_idx: self.buf_idx,
-            buf: self.buf,
+            buf: self.buf.clone(),
             cipher: self.cipher.clone(),
-            ci: self.ci,
-            k1: self.k1,
-            k2: self.k2,
+            ci: self.ci.clone(),
+            k1: self.k1.clone(),
+            k2: self.k2.clone(),
             is_finalize: self.is_finalize,
         }
     }
 }
 
 #[cfg(feature = "sec-zeroize")]
-impl<E: Zeroize, const N: usize> Zeroize for CMAC<E, N> {
+impl<E: Zeroize> Zeroize for CMAC<E> {
     fn zeroize(&mut self) {
         self.cipher.zeroize();
         self.ci.zeroize();
@@ -160,9 +163,9 @@ impl<E: Zeroize, const N: usize> Zeroize for CMAC<E, N> {
     }
 }
 
-impl<E, const N: usize> Write for CMAC<E, N>
+impl<E> Write for CMAC<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
@@ -173,31 +176,40 @@ where
             self.reset();
         }
 
-        let data_len = data.len();
-        if self.buf_idx != N {
-            let l = (N - self.buf_idx).min(data.len());
+        let (data_len, n) = (data.len(), self.block_size_x());
+        if self.buf_idx != n {
+            let l = (n - self.buf_idx).min(data.len());
             self.buf[self.buf_idx..].copy_from_slice(&data[..l]);
             self.buf_idx += l;
             data = &data[l..];
         }
 
-        if self.buf_idx + data.len() > N {
+        let mut buf_cipher = Vec::with_capacity(n);
+        if self.buf_idx + data.len() > n {
             // C_i = CIPH_k(C_{i-1} ^ M)
-            self.buf.iter_mut().zip(self.ci).for_each(|(a, b)| {
+            self.buf.iter_mut().zip(self.ci.iter()).for_each(|(a, &b)| {
                 *a ^= b;
             });
-            self.ci = self.cipher.encrypt_block(&self.buf);
+            self.ci.clear();
+            self.cipher
+                .encrypt_block_x(&self.buf, &mut self.ci)
+                .map_err(std::io::Error::other)?;
             self.buf_idx = 0;
 
-            while data.len() > N {
+            while data.len() > n {
                 self.ci
                     .iter_mut()
-                    .zip(data.iter().take(N))
+                    .zip(data.iter().take(n))
                     .for_each(|(a, &b)| {
                         *a ^= b;
                     });
-                self.ci = self.cipher.encrypt_block(&self.ci);
-                data = &data[N..];
+                buf_cipher.clear();
+                self.cipher
+                    .encrypt_block_x(&self.ci, &mut buf_cipher)
+                    .map_err(std::io::Error::other)?;
+                self.ci.clear();
+                self.ci.append(&mut buf_cipher);
+                data = &data[n..];
             }
         }
 
@@ -210,22 +222,27 @@ where
     }
 }
 
-impl<E, const N: usize> MAC for CMAC<E, N>
+impl<E> MAC for CMAC<E>
 where
-    E: BlockEncrypt<N>,
+    E: BlockEncryptX,
 {
-    const BLOCK_SIZE: usize = N;
-    const DIGEST_SIZE: usize = N;
+    fn block_size_x(&self) -> usize {
+        self.cipher.block_size_x()
+    }
+    fn digest_size_x(&self) -> usize {
+        self.block_size_x()
+    }
     fn mac(&mut self) -> Vec<u8> {
         if self.is_finalize {
             return self.ci.to_vec();
         }
 
-        if self.buf_idx == N {
+        let n = self.block_size_x();
+        if self.buf_idx == n {
             self.ci
                 .iter_mut()
-                .zip(self.buf.into_iter().zip(self.k1))
-                .for_each(|(a, (b, c))| {
+                .zip(self.buf.iter().zip(self.k1.iter()))
+                .for_each(|(a, (&b, &c))| {
                     *a ^= b ^ c;
                 });
         } else {
@@ -233,18 +250,22 @@ where
             self.buf[self.buf_idx] = 0x80;
             self.ci
                 .iter_mut()
-                .zip(self.buf.into_iter().zip(self.k2))
-                .for_each(|(a, (b, c))| {
+                .zip(self.buf.iter().zip(self.k2.iter()))
+                .for_each(|(a, (&b, &c))| {
                     *a ^= b ^ c;
                 })
         }
-        self.ci = self.cipher.encrypt_block(&self.ci);
+
+        let mut mac = Vec::with_capacity(self.digest_size_x());
+        self.cipher.encrypt_block_x(&self.ci, &mut mac).unwrap();
+        self.ci.copy_from_slice(&mac);
         self.is_finalize = true;
-        self.ci.to_vec()
+        mac
     }
 
     fn reset(&mut self) {
-        self.ci = [0u8; N];
+        self.ci.clear();
+        self.ci.resize(self.cipher.block_size_x(), 0);
         self.buf_idx = 0;
         self.is_finalize = false;
     }

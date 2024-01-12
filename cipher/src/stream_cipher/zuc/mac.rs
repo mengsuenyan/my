@@ -108,8 +108,13 @@ impl<const N: usize> Write for ZUCMac<N> {
 
 impl<const N: usize> MAC for ZUCMac<N> {
     /// 消息流不足`N`字节, 补0对齐;
-    const BLOCK_SIZE: usize = 1;
-    const DIGEST_SIZE: usize = N;
+    fn block_size_x(&self) -> usize {
+        1
+    }
+
+    fn digest_size_x(&self) -> usize {
+        N
+    }
 
     fn mac(&mut self) -> Vec<u8> {
         if self.is_finalize {

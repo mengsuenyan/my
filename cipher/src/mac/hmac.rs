@@ -5,8 +5,8 @@
 //! - MAC(text) = HMAC(K, text) = H((K0 ⊕ opad )|| H((K0 ⊕ ipad) || text))
 //!
 
-use crate::{CipherError, MAC};
-use crypto_hash::Digest;
+use crate::{CipherError, MAC, PRF};
+use crypto_hash::DigestX;
 use std::cmp::Ordering;
 use std::io::Write;
 #[cfg(feature = "sec-zeroize")]
@@ -25,9 +25,9 @@ impl<D> HMAC<D> {
     const OPAD: u8 = 0x5c;
 }
 
-impl<D: Digest> HMAC<D> {
-    pub fn new(mut digest: D, key: Vec<u8>) -> Result<Self, CipherError> {
-        if D::BLOCK_BITS < D::DIGEST_BITS {
+impl<D: DigestX> HMAC<D> {
+    pub fn new(digest: D, key: Vec<u8>) -> Result<Self, CipherError> {
+        if digest.block_bits_x() < digest.digest_bits_x() {
             // key.len() > BLOCK_SIZE时需要哈希生成k0
             return Err(CipherError::Other(format!(
                 "{} doesn't satisfies to block bits great than digest bits.",
@@ -35,29 +35,20 @@ impl<D: Digest> HMAC<D> {
             )));
         }
 
-        let mut k0_i = Self::k0(key, (D::BLOCK_BITS + 7) >> 3);
-        let mut k0_o = k0_i.clone();
-        k0_i.iter_mut().for_each(|x| {
-            *x ^= Self::IPAD;
-        });
-        k0_o.iter_mut().for_each(|x| {
-            *x ^= Self::OPAD;
-        });
-
-        digest
-            .write_all(k0_i.as_slice())
-            .map_err(CipherError::from)?;
-
-        Ok(Self {
+        let mut s = Self {
             pre_mac: vec![],
-            k0_i,
-            k0_o,
+            k0_i: vec![],
+            k0_o: vec![],
             digest,
             is_finalize: false,
-        })
+        };
+
+        s.update_key(key)?;
+
+        Ok(s)
     }
 
-    fn k0(mut key: Vec<u8>, block_size: usize) -> Vec<u8> {
+    fn k0(digest: &mut D, mut key: Vec<u8>, block_size: usize) -> Vec<u8> {
         match key.len().cmp(&block_size) {
             Ordering::Less => {
                 key.resize(block_size, 0);
@@ -65,7 +56,8 @@ impl<D: Digest> HMAC<D> {
             }
             Ordering::Equal => key,
             Ordering::Greater => {
-                let mut k0: Vec<_> = D::digest(key.as_slice()).into();
+                digest.reset_x();
+                let mut k0 = digest.digest(key.as_slice());
                 k0.resize(block_size, 0);
                 #[cfg(feature = "sec-zeroize")]
                 key.zeroize();
@@ -97,7 +89,7 @@ impl<D: Clone> Clone for HMAC<D> {
     }
 }
 
-impl<D: Digest + Clone> Write for HMAC<D> {
+impl<D: DigestX> Write for HMAC<D> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.is_finalize {
             self.reset();
@@ -119,23 +111,27 @@ impl<D: Digest + Clone> Write for HMAC<D> {
     }
 }
 
-impl<D: Digest + Clone> MAC for HMAC<D> {
-    const BLOCK_SIZE: usize = (D::BLOCK_BITS + 7) >> 3;
-    const DIGEST_SIZE: usize = (D::DIGEST_BITS + 7) >> 3;
+impl<D: DigestX> MAC for HMAC<D> {
+    fn block_size_x(&self) -> usize {
+        (self.digest.block_bits_x() + 7) >> 3
+    }
+
+    fn digest_size_x(&self) -> usize {
+        (self.digest.digest_bits_x() + 7) >> 3
+    }
 
     fn mac(&mut self) -> Vec<u8> {
         if self.is_finalize {
             return self.pre_mac.clone();
         }
 
-        let mut h1: Vec<_> = self.digest.clone().finalize().into();
-        self.digest.reset();
-        h1.extend(self.k0_o.iter());
+        let mut h1 = self.digest.finish_x();
+        h1.extend_from_slice(self.k0_o.as_slice());
         h1.rotate_right(self.k0_o.len());
 
-        let out: Vec<_> = D::digest(h1.as_slice()).into();
+        let out: Vec<_> = self.digest.digest(h1.as_slice());
         self.pre_mac.clear();
-        self.pre_mac.extend(out.iter());
+        self.pre_mac.extend_from_slice(out.as_slice());
         #[cfg(feature = "sec-zeroize")]
         h1.zeroize();
 
@@ -144,9 +140,38 @@ impl<D: Digest + Clone> MAC for HMAC<D> {
     }
 
     fn reset(&mut self) {
-        self.digest.reset();
+        self.digest.reset_x();
         self.pre_mac.clear();
         self.is_finalize = false;
+        self.digest.write_all(self.k0_i.as_slice()).unwrap();
+    }
+}
+
+impl<D: DigestX> PRF for HMAC<D> {
+    fn update_key(&mut self, key: Vec<u8>) -> Result<(), CipherError> {
+        self.digest.reset_x();
+        let block_size = self.block_size_x();
+        self.k0_i.clear();
+        self.k0_i
+            .extend(Self::k0(&mut self.digest, key, block_size));
+        self.k0_o.clear();
+        self.k0_o.extend_from_slice(self.k0_i.as_slice());
+        self.k0_i.iter_mut().for_each(|x| {
+            *x ^= Self::IPAD;
+        });
+        self.k0_o.iter_mut().for_each(|x| {
+            *x ^= Self::OPAD;
+        });
+
+        self.digest.reset_x();
+        self.digest
+            .write_all(self.k0_i.as_slice())
+            .map_err(CipherError::from)
+    }
+
+    fn prf(&mut self, x: &[u8]) -> Vec<u8> {
+        self.write_all(x).unwrap();
+        self.mac()
     }
 }
 
