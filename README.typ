@@ -60,7 +60,9 @@
 - `Signer`: 签名算法;
   - `Sign/Verify`: 签名验证;
 - `AuthenticationCipher`: 认证加密算法, 动态派发版本`AuthenticatinCipherX`;
-- `MAC`: 消息认证码, 动态派发版本`MACx`;
+- `MAC`: 消息认证码;
+- `PRF`: 伪随机函数;
+- `KDF`: 密钥派生函数;
 
 == BlockCipher
 
@@ -82,7 +84,7 @@
 == AuthenticationCipher
 
 - CCM: Counter with Cipher Block Chaining-Message Authentication Code, 实现标准*SP 800-38C*;
-  - `CCM<BlockEncryptX, const BlockSize: usize>`: 指定实现了`BlockEncryptX`trait的加密算法;
+  - `CCM<BlockEncryptX>`: 指定实现了`BlockEncryptX`trait的加密算法;
     - 特化版本: AES128Ccm, AES192Ccm, AES256Ccm, AESCcm;
 - GCM: Galois/Counter Mode, 实现标准*SP 800-38D*;
   - `GCM<BlockEncryptX>`, 指定实现了`BlockEncryptX`的算法;
@@ -93,7 +95,7 @@
 == StreamCipher
 
 - GCM: Gaslois/Counter Mode, 实现标准*SP 800-38D*;
-  - `GCMStream<BlockEncrypt>`, 指定实现了`BlockEncrypt<16>`算法, 其还实现了`AuthenticationCipher`接口;
+  - `GCMStream<BlockEncrypt>`, 指定实现了`BlockEncryptX`算法, 其还实现了`AuthenticationCipher`接口;
     - 特化版本: AES128GcmStream, AES192GcmStream, AES256GcmStream, AESGcmStream;
 - ZUC: 祖冲之流加密算法, 实现标准*GM/T 0001-2012*;
   - ZUC;
@@ -120,9 +122,26 @@
   - `ZUCMac<const N: usize>`: 规范定义的输出是32位, 即`ZUCStdMac = ZUCMac<4>`. 这里给出扩展, 输出`N`字节的MAC;
    - 特化版本: ZUCStdMac, 标准定义的MAC实现;
 - CMAC: 基于分组加密的消息认证码, 实现标准*SP 800-38B*;
-  - `CMAC<const N: usize>`: `N`指定消息认证码的字节大小;
+  - `CMAC<BlockEncryptX>`;
 - HMAC: 基于哈希密钥的消息认证码, 实现标准*FIPS 198-1*;
   - `HMAC<H: Digest>`: `H`指定哈希算法, 输出消息认证码长度既是`H`的摘要长度;
+- CSHAKE: 实现标准*SP 800-184*, 有SHA3派生的一些函数;
+  - `KMAC<Rate>`;
+  - `KMACXof<Rate>`;
+
+== PRF
+
+- HMAC: `HMAC<D>`实现了`PRF`;
+
+== KDF
+
+- PBKDF: 基于密码的密钥派生函数, 实现标准*RFC 8018, PKCS #5 Password-Based Crypography Specification*;
+  - `PBKDF1<DigestX>`;
+  - `PBKDF2<PRF>`;
+- Scrypt: 基于密码的密钥派生函数(使用内存作为成本函数, 抗GPU, ASIC), 实现标准*RFC 7914*;
+  - `Scrypt`;
+- Argon2: 基于密码的密钥派生函数(使用内存作为成本函数, 抗GPU, ASIC), 实现标准*RFC 9106*;
+  - `Argon2`;
 
 = utils
 

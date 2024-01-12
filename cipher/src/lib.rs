@@ -24,6 +24,12 @@ pub mod builder;
 pub mod dss;
 pub mod rsa;
 
+pub mod kdf;
+pub use kdf::KDF;
+
+pub mod prf;
+pub use prf::PRF;
+
 pub trait Encrypt {
     // 写入ciphertext之前不清空
     fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError>;

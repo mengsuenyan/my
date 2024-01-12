@@ -79,6 +79,13 @@ pub trait DigestX: Write {
     fn word_bits_x(&self) -> usize;
     fn digest_bits_x(&self) -> usize;
     fn finish_x(&mut self) -> Vec<u8>;
+    fn digest(&mut self, msg: &[u8]) -> Vec<u8> {
+        self.reset_x();
+        self.write_all(msg).unwrap();
+        let x = self.finish_x();
+        self.reset_x();
+        x
+    }
     fn reset_x(&mut self);
 }
 
