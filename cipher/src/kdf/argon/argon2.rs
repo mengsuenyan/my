@@ -2,6 +2,7 @@ use crate::{CipherError, KDF};
 use crypto_hash::{blake::BLAKE2b, DigestX};
 use std::{io::Write, num::Wrapping};
 use utils::Block;
+#[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
 
 use super::Params;
@@ -407,7 +408,7 @@ impl KDF for Argon2 {
     }
 
     /// key_size必须是self.tag_len()
-    fn kdf(mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
+    fn kdf(&mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
         if key_size != self.tag_len() as usize {
             return Err(CipherError::InvalidKeySize {
                 real: self.tag_len() as usize,
@@ -446,7 +447,7 @@ mod tests {
 
     #[test]
     fn argon2d() {
-        let argon2d = ParamsBuilder::argon2d()
+        let mut argon2d = ParamsBuilder::argon2d()
             .mem_size(32)
             .number_of_passes(3)
             .degree_of_parallelism(4)
@@ -484,7 +485,7 @@ mod tests {
 
     #[test]
     fn argon2i() {
-        let argon2i = ParamsBuilder::argon2i()
+        let mut argon2i = ParamsBuilder::argon2i()
             .mem_size(32)
             .number_of_passes(3)
             .degree_of_parallelism(4)
@@ -522,7 +523,7 @@ mod tests {
 
     #[test]
     fn argon2id() {
-        let argon2id = ParamsBuilder::argon2id()
+        let mut argon2id = ParamsBuilder::argon2id()
             .mem_size(32)
             .number_of_passes(3)
             .degree_of_parallelism(4)

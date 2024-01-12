@@ -5,7 +5,10 @@ mod hmac;
 use clap::Command;
 pub use hmac::HMACCmd;
 
-use super::{Cmd, hash::{KMAC128Cmd, KMAC256Cmd, KMACXof128Cmd, KMACXof256Cmd}};
+use super::{
+    hash::{KMAC128Cmd, KMAC256Cmd, KMACXof128Cmd, KMACXof256Cmd},
+    Cmd,
+};
 
 impl Cmd for MACCmd {
     const NAME: &'static str = "mac";

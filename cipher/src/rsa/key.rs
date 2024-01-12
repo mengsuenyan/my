@@ -186,8 +186,8 @@ impl PrivateKey {
             Ok(self.rsadp_uncheck(c))
         } else {
             Err(CipherError::Other(format!(
-                "rsadp: invalid cipher message that need less than {:#x}",
-                self.pk.n
+                "rsadp: invalid cipher message {:#x} that need less than {:#x}",
+                c, self.pk.n
             )))
         }
     }

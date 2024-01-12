@@ -9,6 +9,8 @@ use crate::{CipherError, KDF};
 use crypto_hash::sha2::SHA256;
 use num_bigint::BigUint;
 use utils::Block;
+#[cfg(feature = "sec-zeroize")]
+use zeroize::Zeroize;
 
 #[derive(Clone)]
 pub struct Scrypt {
@@ -196,17 +198,25 @@ impl KDF for Scrypt {
         (u32::MAX as usize - 1) * 32
     }
 
-    fn kdf(self, key_size: usize) -> Result<Vec<u8>, CipherError> {
+    fn kdf(&mut self, key_size: usize) -> Result<Vec<u8>, CipherError> {
         let prf = HMAC::new(SHA256::new(), vec![])?;
-        let kdf = PBKDF2::new(prf.clone(), self.password.clone(), self.salt, 1)?;
+        let mut kdf = PBKDF2::new(prf.clone(), self.password.clone(), self.salt.clone(), 1)?;
         let b = kdf.kdf(self.p * 128 * self.r)?;
         let mut bo = Vec::with_capacity(b.len());
         for chunk in b.chunks_exact(128 * self.r) {
             bo.extend(Self::rom_mix(self.n, chunk));
         }
 
-        let kdf = PBKDF2::new(prf, self.password, bo, 1)?;
+        let mut kdf = PBKDF2::new(prf, self.password.clone(), bo, 1)?;
         kdf.kdf(key_size)
+    }
+}
+
+#[cfg(feature = "sec-zeroize")]
+impl Drop for Scrypt {
+    fn drop(&mut self) {
+        self.password.zeroize();
+        self.salt.zeroize();
     }
 }
 
@@ -410,7 +420,7 @@ mod tests {
         ];
 
         for (i, (password, salt, n, r, p, klen, tgt)) in cases.into_iter().enumerate() {
-            let scrypt = Scrypt::new(
+            let mut scrypt = Scrypt::new(
                 password.as_bytes().to_vec(),
                 salt.as_bytes().to_vec(),
                 n,
