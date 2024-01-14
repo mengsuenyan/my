@@ -63,7 +63,11 @@ impl Cmd for RSACmd {
 
         let mut rng = DefaultRand::default();
         let key = PrivateKey::generate_multi_prime_key(primes, bits, rounds, &mut rng).unwrap();
-        let key = serde_json::to_string_pretty(&key).unwrap();
-        write_to_file_or_stdout(m, key.as_bytes()).unwrap()
+        if m.contains_id("output") {
+            let key = serde_json::to_vec(&key).unwrap();
+            write_to_file_or_stdout(m, key.as_slice()).unwrap()
+        } else {
+            println!("{}", key);
+        }
     }
 }

@@ -9,7 +9,7 @@ use crate::block_cipher::{BlockDecryptX, BlockEncryptX};
 use crate::rsa::FlagClear;
 use crate::rsa::{PrivateKey, PublicKey};
 use crate::{CipherError, Rand};
-use crypto_hash::Digest;
+use crypto_hash::DigestX;
 use num_bigint::BigUint;
 use std::cell::RefCell;
 use std::io::{Read, Write};
@@ -17,21 +17,22 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Optimal Asymmetric Encryption Padding
-pub struct OAEPEncrypt<H: Digest, R: Rand> {
+pub struct OAEPEncrypt<H: DigestX, R: Rand> {
     is_working: AtomicBool,
     key: PublicKey,
     hasher: RefCell<H>,
     rng: RefCell<R>,
+    hlen: usize,
     label: Vec<u8>,
 }
 
 #[derive(Clone)]
-pub struct OAEPDecrypt<H: Digest, R: Rand> {
+pub struct OAEPDecrypt<H: DigestX, R: Rand> {
     de: OAEPEncrypt<H, R>,
     key: PrivateKey,
 }
 
-impl<'a, H: Digest, R: Rand> From<&'a OAEPEncrypt<H, R>> for FlagClear<'a> {
+impl<'a, H: DigestX, R: Rand> From<&'a OAEPEncrypt<H, R>> for FlagClear<'a> {
     fn from(value: &'a OAEPEncrypt<H, R>) -> Self {
         Self {
             is_working: &value.is_working,
@@ -39,7 +40,7 @@ impl<'a, H: Digest, R: Rand> From<&'a OAEPEncrypt<H, R>> for FlagClear<'a> {
     }
 }
 
-impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
+impl<H: DigestX, R: Rand> OAEPEncrypt<H, R> {
     /// label: 和消息相关联的标签
     pub fn new(key: PublicKey, hasher: H, rng: R, label: &[u8]) -> Result<Self, CipherError> {
         if key.modules().bits() & 7 != 0 {
@@ -50,7 +51,7 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
 
         let (klen, hlen) = (
             (key.modules().bits() as usize + 7) >> 3,
-            (H::DIGEST_BITS + 7) >> 3,
+            (hasher.digest_bits_x() + 7) >> 3,
         );
         if klen < (hlen << 1) + 2 {
             return Err(CipherError::Other(
@@ -65,6 +66,7 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
             hasher: RefCell::new(hasher),
             rng: RefCell::new(rng),
             label: label.to_vec(),
+            hlen,
         })
     }
 
@@ -94,10 +96,10 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
         let mut hasher = self.hasher.borrow_mut();
         while done < obound.end - obound.start {
             let seed = &msg[sbound.clone()];
-            hasher.reset();
+            hasher.reset_x();
             hasher.write_all(seed).unwrap();
             hasher.write_all(&cnt.to_be_bytes()).unwrap();
-            let digest = hasher.finalize();
+            let digest = hasher.finish_x();
 
             msg[obound.clone()]
                 .iter_mut()
@@ -117,7 +119,7 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
     }
 
     const fn hash_len(&self) -> usize {
-        (H::DIGEST_BITS + 7) >> 3
+        self.hlen
     }
 
     pub fn max_msg_len(&self) -> usize {
@@ -156,9 +158,9 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
         }
 
         let mut hasher = self.hasher.borrow_mut();
-        hasher.reset();
+        hasher.reset_x();
         hasher.write_all(self.label.as_slice()).unwrap();
-        let digest = hasher.finalize();
+        let digest = hasher.finish_x();
         drop(hasher);
 
         // em = 0x00 || masked seed || masked db(data block)
@@ -211,7 +213,7 @@ impl<H: Digest, R: Rand> OAEPEncrypt<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> OAEPDecrypt<H, R> {
+impl<H: DigestX, R: Rand> OAEPDecrypt<H, R> {
     pub fn new(key: PrivateKey, hasher: H, rng: R, label: &[u8]) -> Result<Self, CipherError> {
         key.is_valid()?;
         let de = OAEPEncrypt::new(key.public_key().clone(), hasher, rng, label)?;
@@ -309,9 +311,9 @@ impl<H: Digest, R: Rand> OAEPDecrypt<H, R> {
         }
 
         let mut hasher = self.de.hasher.borrow_mut();
-        hasher.reset();
+        hasher.reset_x();
         hasher.write_all(self.de.label.as_slice()).unwrap();
-        let digest = hasher.finalize();
+        let digest = hasher.finish_x();
         drop(hasher);
 
         let (seed_bound, db_bound) = (
@@ -366,25 +368,25 @@ impl<H: Digest, R: Rand> OAEPDecrypt<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> AsRef<OAEPEncrypt<H, R>> for OAEPDecrypt<H, R> {
+impl<H: DigestX, R: Rand> AsRef<OAEPEncrypt<H, R>> for OAEPDecrypt<H, R> {
     fn as_ref(&self) -> &OAEPEncrypt<H, R> {
         &self.de
     }
 }
 
-impl<H: Digest, R: Rand> AsRef<PublicKey> for OAEPEncrypt<H, R> {
+impl<H: DigestX, R: Rand> AsRef<PublicKey> for OAEPEncrypt<H, R> {
     fn as_ref(&self) -> &PublicKey {
         &self.key
     }
 }
 
-impl<H: Digest, R: Rand> AsRef<PrivateKey> for OAEPDecrypt<H, R> {
+impl<H: DigestX, R: Rand> AsRef<PrivateKey> for OAEPDecrypt<H, R> {
     fn as_ref(&self) -> &PrivateKey {
         &self.key
     }
 }
 
-impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncrypt<H, R> {
+impl<H: DigestX, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncrypt<H, R> {
     fn from(value: OAEPDecrypt<H, R>) -> Self {
         value.de
     }
@@ -392,7 +394,7 @@ impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncrypt<H, R> {
 
 impl<H, R> Clone for OAEPEncrypt<H, R>
 where
-    H: Digest + Clone,
+    H: DigestX + Clone,
     R: Rand + Clone,
 {
     fn clone(&self) -> Self {
@@ -402,11 +404,12 @@ where
             hasher: self.hasher.clone(),
             rng: self.rng.clone(),
             label: self.label.clone(),
+            hlen: self.hlen,
         }
     }
 }
 
-impl<H: Digest, R: Rand> BlockEncryptX for OAEPEncrypt<H, R> {
+impl<H: DigestX, R: Rand> BlockEncryptX for OAEPEncrypt<H, R> {
     fn block_size_x(&self) -> usize {
         self.max_msg_len()
     }
@@ -421,7 +424,7 @@ impl<H: Digest, R: Rand> BlockEncryptX for OAEPEncrypt<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> BlockDecryptX for OAEPDecrypt<H, R> {
+impl<H: DigestX, R: Rand> BlockDecryptX for OAEPDecrypt<H, R> {
     fn block_size_x(&self) -> usize {
         self.key_len()
     }
@@ -436,7 +439,7 @@ impl<H: Digest, R: Rand> BlockDecryptX for OAEPDecrypt<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> BlockEncryptX for OAEPDecrypt<H, R> {
+impl<H: DigestX, R: Rand> BlockEncryptX for OAEPDecrypt<H, R> {
     fn block_size_x(&self) -> usize {
         self.max_msg_len()
     }

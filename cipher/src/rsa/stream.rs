@@ -1,15 +1,15 @@
 use crate::rsa::{OAEPDecrypt, OAEPEncrypt, PKCS1Decrypt, PKCS1Encrypt};
 use crate::{CipherError, Rand, StreamCipherFinish, StreamDecrypt, StreamEncrypt};
-use crypto_hash::Digest;
+use crypto_hash::DigestX;
 use std::io::{Read, Write};
 use std::ops::Deref;
 
-pub struct OAEPEncryptStream<H: Digest, R: Rand> {
+pub struct OAEPEncryptStream<H: DigestX, R: Rand> {
     buf: Vec<u8>,
     oaep: OAEPEncrypt<H, R>,
 }
 
-pub struct OAEPDecryptStream<H: Digest, R: Rand> {
+pub struct OAEPDecryptStream<H: DigestX, R: Rand> {
     buf: Vec<u8>,
     oaep: OAEPDecrypt<H, R>,
 }
@@ -19,12 +19,12 @@ pub struct PKCS1EncryptStream<R: Rand> {
     pkcs: PKCS1Encrypt<R>,
 }
 
-pub struct PKCS1DecryptSteam<R: Rand> {
+pub struct PKCS1DecryptStream<R: Rand> {
     buf: Vec<u8>,
     pkcs: PKCS1Decrypt<R>,
 }
 
-impl<H: Digest, R: Rand> From<OAEPEncrypt<H, R>> for OAEPEncryptStream<H, R> {
+impl<H: DigestX, R: Rand> From<OAEPEncrypt<H, R>> for OAEPEncryptStream<H, R> {
     fn from(value: OAEPEncrypt<H, R>) -> Self {
         Self {
             buf: Vec::with_capacity(1024),
@@ -33,7 +33,7 @@ impl<H: Digest, R: Rand> From<OAEPEncrypt<H, R>> for OAEPEncryptStream<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncryptStream<H, R> {
+impl<H: DigestX, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncryptStream<H, R> {
     fn from(value: OAEPDecrypt<H, R>) -> Self {
         Self {
             buf: Vec::with_capacity(1024),
@@ -42,7 +42,7 @@ impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPEncryptStream<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPDecryptStream<H, R> {
+impl<H: DigestX, R: Rand> From<OAEPDecrypt<H, R>> for OAEPDecryptStream<H, R> {
     fn from(value: OAEPDecrypt<H, R>) -> Self {
         Self {
             buf: Vec::with_capacity(1024),
@@ -51,14 +51,14 @@ impl<H: Digest, R: Rand> From<OAEPDecrypt<H, R>> for OAEPDecryptStream<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> Deref for OAEPEncryptStream<H, R> {
+impl<H: DigestX, R: Rand> Deref for OAEPEncryptStream<H, R> {
     type Target = OAEPEncrypt<H, R>;
     fn deref(&self) -> &Self::Target {
         &self.oaep
     }
 }
 
-impl<H: Digest, R: Rand> Deref for OAEPDecryptStream<H, R> {
+impl<H: DigestX, R: Rand> Deref for OAEPDecryptStream<H, R> {
     type Target = OAEPDecrypt<H, R>;
     fn deref(&self) -> &Self::Target {
         &self.oaep
@@ -83,7 +83,7 @@ impl<R: Rand> From<PKCS1Decrypt<R>> for PKCS1EncryptStream<R> {
     }
 }
 
-impl<R: Rand> From<PKCS1Decrypt<R>> for PKCS1DecryptSteam<R> {
+impl<R: Rand> From<PKCS1Decrypt<R>> for PKCS1DecryptStream<R> {
     fn from(value: PKCS1Decrypt<R>) -> Self {
         Self {
             buf: Vec::with_capacity(1024),
@@ -99,20 +99,20 @@ impl<R: Rand> Deref for PKCS1EncryptStream<R> {
     }
 }
 
-impl<R: Rand> Deref for PKCS1DecryptSteam<R> {
+impl<R: Rand> Deref for PKCS1DecryptStream<R> {
     type Target = PKCS1Decrypt<R>;
     fn deref(&self) -> &Self::Target {
         &self.pkcs
     }
 }
 
-impl<H: Digest, R: Rand> OAEPEncryptStream<H, R> {
+impl<H: DigestX, R: Rand> OAEPEncryptStream<H, R> {
     pub fn new(oaep: OAEPEncrypt<H, R>) -> Self {
         Self::from(oaep)
     }
 }
 
-impl<H: Digest, R: Rand> OAEPDecryptStream<H, R> {
+impl<H: DigestX, R: Rand> OAEPDecryptStream<H, R> {
     pub fn new(oaep: OAEPDecrypt<H, R>) -> Self {
         Self::from(oaep)
     }
@@ -124,13 +124,13 @@ impl<R: Rand> PKCS1EncryptStream<R> {
     }
 }
 
-impl<R: Rand> PKCS1DecryptSteam<R> {
+impl<R: Rand> PKCS1DecryptStream<R> {
     pub fn new(pkcs: PKCS1Decrypt<R>) -> Self {
         Self::from(pkcs)
     }
 }
 
-impl<H: Digest, R: Rand> StreamEncrypt for OAEPEncryptStream<H, R> {
+impl<H: DigestX, R: Rand> StreamEncrypt for OAEPEncryptStream<H, R> {
     fn stream_encrypt<'a, IR: Read, OW: Write>(
         &'a mut self,
         in_data: &'a mut IR,
@@ -160,7 +160,7 @@ impl<H: Digest, R: Rand> StreamEncrypt for OAEPEncryptStream<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> StreamEncrypt for OAEPDecryptStream<H, R> {
+impl<H: DigestX, R: Rand> StreamEncrypt for OAEPDecryptStream<H, R> {
     fn stream_encrypt<'a, IR: Read, OW: Write>(
         &'a mut self,
         in_data: &'a mut IR,
@@ -192,7 +192,7 @@ impl<H: Digest, R: Rand> StreamEncrypt for OAEPDecryptStream<H, R> {
     }
 }
 
-impl<H: Digest, R: Rand> StreamDecrypt for OAEPDecryptStream<H, R> {
+impl<H: DigestX, R: Rand> StreamDecrypt for OAEPDecryptStream<H, R> {
     fn stream_decrypt<'a, IR: Read, OW: Write>(
         &'a mut self,
         in_data: &'a mut IR,
@@ -252,7 +252,7 @@ impl<R: Rand> StreamEncrypt for PKCS1EncryptStream<R> {
     }
 }
 
-impl<R: Rand> StreamEncrypt for PKCS1DecryptSteam<R> {
+impl<R: Rand> StreamEncrypt for PKCS1DecryptStream<R> {
     fn stream_encrypt<'a, IR: Read, OW: Write>(
         &'a mut self,
         in_data: &'a mut IR,
@@ -282,7 +282,7 @@ impl<R: Rand> StreamEncrypt for PKCS1DecryptSteam<R> {
     }
 }
 
-impl<R: Rand> StreamDecrypt for PKCS1DecryptSteam<R> {
+impl<R: Rand> StreamDecrypt for PKCS1DecryptStream<R> {
     fn stream_decrypt<'a, IR: Read, OW: Write>(
         &'a mut self,
         in_data: &'a mut IR,

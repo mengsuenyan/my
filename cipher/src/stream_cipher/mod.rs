@@ -285,4 +285,6 @@ where
 pub mod zuc;
 pub use crate::ae::{AES128GcmStream, AES192GcmStream, AES256GcmStream, AESGcmStream, GcmStream};
 pub use crate::cipher_mode;
-pub use crate::rsa::{OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptSteam, PKCS1EncryptStream};
+pub use crate::rsa::{
+    OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptStream, PKCS1EncryptStream,
+};

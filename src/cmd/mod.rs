@@ -63,3 +63,6 @@ pub use crypto::CryptoCmd;
 
 pub mod mac;
 pub use mac::MACCmd;
+
+mod pkcs;
+pub use pkcs::PKCSCmd;
