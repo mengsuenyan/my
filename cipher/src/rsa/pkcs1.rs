@@ -288,7 +288,7 @@ impl<R: Rand> BlockDecryptX for PKCS1Decrypt<R> {
 #[cfg(test)]
 mod tests {
     use crate::rsa::{
-        PKCS1Decrypt, PKCS1DecryptSteam, PKCS1Encrypt, PKCS1EncryptStream, PrivateKey,
+        PKCS1Decrypt, PKCS1DecryptStream, PKCS1Encrypt, PKCS1EncryptStream, PrivateKey,
     };
     use crate::DefaultRand;
     use crate::{StreamDecrypt, StreamEncrypt};
@@ -330,7 +330,7 @@ mod tests {
 
         let (mut encrypt, mut decrypt) = (
             PKCS1EncryptStream::new(pkcse),
-            PKCS1DecryptSteam::new(pkcsd),
+            PKCS1DecryptStream::new(pkcsd),
         );
 
         for (i, (cipher, msg)) in cases.into_iter().enumerate() {

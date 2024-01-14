@@ -21,7 +21,7 @@ mod oaep;
 pub use oaep::{OAEPDecrypt, OAEPEncrypt};
 
 mod stream;
-pub use stream::{OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptSteam, PKCS1EncryptStream};
+pub use stream::{OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptStream, PKCS1EncryptStream};
 
 mod flag;
 use flag::FlagClear;
