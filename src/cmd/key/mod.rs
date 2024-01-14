@@ -15,6 +15,9 @@ pub use scrypt::ScryptCmd;
 mod argon;
 pub use argon::Argon2Cmd;
 
+mod plain;
+pub use plain::PlainCmd;
+
 fn write_to_file_or_stdout(m: &ArgMatches, data: &[u8]) -> anyhow::Result<()> {
     match m.get_one::<PathBuf>("output") {
         Some(p) => {
@@ -46,6 +49,7 @@ impl Cmd for KeyCmd {
             .subcommand(PBKDF2Cmd::cmd())
             .subcommand(ScryptCmd::cmd())
             .subcommand(Argon2Cmd::cmd())
+            .subcommand(PlainCmd::cmd())
             .subcommand_required(true)
     }
 
@@ -56,6 +60,7 @@ impl Cmd for KeyCmd {
             Some((PBKDF2Cmd::NAME, m)) => PBKDF2Cmd.run(m),
             Some((ScryptCmd::NAME, m)) => ScryptCmd.run(m),
             Some((Argon2Cmd::NAME, m)) => Argon2Cmd.run(m),
+            Some((PlainCmd::NAME, m)) => PlainCmd.run(m),
             Some((other, _m)) => panic!("not support the {other} key generation"),
             None => panic!("need to specify the key name"),
         }

@@ -138,7 +138,7 @@ impl Argon2Cmd {
             m.get_one::<PathBuf>("associate"),
         );
 
-        let key = read(k).unwrap();
+        let key = read(k)?;
         let salt = match s {
             Some(f) => read(f)?,
             None => vec![],

@@ -111,7 +111,7 @@ impl ScryptCmd {
                 .ok_or(anyhow!("not specified paral numbers"))? as usize,
         );
 
-        let key = read(k).unwrap();
+        let key = read(k)?;
         let salt = match s {
             Some(f) => read(f)?,
             None => vec![],

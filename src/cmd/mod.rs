@@ -59,6 +59,7 @@ mod sign;
 pub use sign::SignCmd;
 
 mod crypto;
+pub use crypto::CryptoCmd;
 
 pub mod mac;
 pub use mac::MACCmd;

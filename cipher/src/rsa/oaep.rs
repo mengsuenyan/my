@@ -8,7 +8,7 @@
 use crate::block_cipher::{BlockDecryptX, BlockEncryptX};
 use crate::rsa::FlagClear;
 use crate::rsa::{PrivateKey, PublicKey};
-use crate::{CipherError, Decrypt, Encrypt, Rand};
+use crate::{CipherError, Rand};
 use crypto_hash::Digest;
 use num_bigint::BigUint;
 use std::cell::RefCell;
@@ -448,23 +448,5 @@ impl<H: Digest, R: Rand> BlockEncryptX for OAEPDecrypt<H, R> {
     ) -> Result<(), CipherError> {
         let _len = self.de.oaep_encrypt(&mut plaintext, ciphertext)?;
         Ok(())
-    }
-}
-
-impl<H: Digest, R: Rand> Encrypt for OAEPEncrypt<H, R> {
-    fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.encrypt_block_x(plaintext, ciphertext)
-    }
-}
-
-impl<H: Digest, R: Rand> Encrypt for OAEPDecrypt<H, R> {
-    fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.encrypt_block_x(plaintext, ciphertext)
-    }
-}
-
-impl<H: Digest, R: Rand> Decrypt for OAEPDecrypt<H, R> {
-    fn decrypt(&self, ciphertext: &[u8], plaintext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.decrypt_block_x(ciphertext, plaintext)
     }
 }

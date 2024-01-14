@@ -88,6 +88,15 @@ pub trait StreamEncrypt: Sized {
     ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError>;
 }
 
+pub trait StreamDecrypt: Sized {
+    /// 返回(读, 写)字节数
+    fn stream_decrypt<'a, R: Read, W: Write>(
+        &'a mut self,
+        in_data: &'a mut R,
+        out_data: &mut W,
+    ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError>;
+}
+
 impl<T> Encrypt for RefCell<T>
 where
     T: StreamEncrypt,
@@ -100,15 +109,6 @@ where
     }
 }
 
-pub trait StreamDecrypt: Sized {
-    /// 返回(读, 写)字节数
-    fn stream_decrypt<'a, R: Read, W: Write>(
-        &'a mut self,
-        in_data: &'a mut R,
-        out_data: &mut W,
-    ) -> Result<StreamCipherFinish<'a, Self, R, W>, CipherError>;
-}
-
 impl<T> Decrypt for RefCell<T>
 where
     T: StreamDecrypt,
@@ -118,6 +118,38 @@ where
         let s = sf.stream_decrypt(&mut ciphertext, plaintext)?;
         let _l = s.finish(plaintext)?;
         Ok(())
+    }
+}
+
+impl<T> Encrypt for Mutex<T>
+where
+    T: StreamEncrypt,
+{
+    fn encrypt(&self, mut plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
+        match self.lock() {
+            Ok(mut c) => {
+                let finish = c.stream_encrypt(&mut plaintext, ciphertext)?;
+                let _l = finish.finish(ciphertext)?;
+                Ok(())
+            }
+            Err(e) => Err(CipherError::Other(format!("{e}"))),
+        }
+    }
+}
+
+impl<T> Decrypt for Mutex<T>
+where
+    T: StreamDecrypt,
+{
+    fn decrypt(&self, mut ciphertext: &[u8], plaintext: &mut Vec<u8>) -> Result<(), CipherError> {
+        match self.lock() {
+            Ok(mut c) => {
+                let finish = c.stream_decrypt(&mut ciphertext, plaintext)?;
+                let _l = finish.finish(plaintext)?;
+                Ok(())
+            }
+            Err(e) => Err(CipherError::Other(format!("{e}"))),
+        }
     }
 }
 
@@ -251,6 +283,6 @@ where
 }
 
 pub mod zuc;
-
 pub use crate::ae::{AES128GcmStream, AES192GcmStream, AES256GcmStream, AESGcmStream, GcmStream};
+pub use crate::cipher_mode;
 pub use crate::rsa::{OAEPDecryptStream, OAEPEncryptStream, PKCS1DecryptSteam, PKCS1EncryptStream};
