@@ -179,8 +179,9 @@ where
         let (data_len, n) = (data.len(), self.block_size_x());
         if self.buf_idx != n {
             let l = (n - self.buf_idx).min(data.len());
-            self.buf[self.buf_idx..].copy_from_slice(&data[..l]);
-            self.buf_idx += l;
+            let bound = self.buf_idx + l;
+            self.buf[self.buf_idx..bound].copy_from_slice(&data[..l]);
+            self.buf_idx = bound;
             data = &data[l..];
         }
 

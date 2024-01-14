@@ -1,6 +1,8 @@
 use clap::{Arg, ArgAction, Command};
 use log::LevelFilter;
-use my::cmd::{Cmd, EncCmd, GitCmd, HashCmd, KeyCmd, MACCmd, MyFsCmd, SignCmd, SkyCmd, TokeiCmd};
+use my::cmd::{
+    Cmd, CryptoCmd, EncCmd, GitCmd, HashCmd, KeyCmd, MACCmd, MyFsCmd, SignCmd, SkyCmd, TokeiCmd,
+};
 use std::io::Read;
 
 fn main() {
@@ -29,6 +31,7 @@ fn main() {
         .subcommand(KeyCmd::cmd())
         .subcommand(SignCmd::cmd())
         .subcommand(MACCmd::cmd())
+        .subcommand(CryptoCmd::cmd())
         .get_matches();
 
     if let Some((s, m)) = app.subcommand() {
@@ -47,6 +50,7 @@ fn main() {
             KeyCmd::NAME => KeyCmd.run(m),
             SignCmd::NAME => SignCmd.run(m),
             MACCmd::NAME => MACCmd.run(m),
+            CryptoCmd::NAME => CryptoCmd.run(m),
             name => {
                 panic!("unsupport for {}", name)
             }

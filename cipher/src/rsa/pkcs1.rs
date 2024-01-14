@@ -8,7 +8,7 @@
 use crate::block_cipher::{BlockDecryptX, BlockEncryptX};
 use crate::rsa::flag::FlagClear;
 use crate::rsa::{PrivateKey, PublicKey};
-use crate::{CipherError, Decrypt, Encrypt, Rand};
+use crate::{CipherError, Rand};
 use num_bigint::BigUint;
 use std::cell::RefCell;
 use std::io::{Read, Write};
@@ -282,24 +282,6 @@ impl<R: Rand> BlockDecryptX for PKCS1Decrypt<R> {
     ) -> Result<(), CipherError> {
         let _len = self.pkcs_decrypt(&mut ciphertext, plaintext)?;
         Ok(())
-    }
-}
-
-impl<R: Rand> Encrypt for PKCS1Encrypt<R> {
-    fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.encrypt_block_x(plaintext, ciphertext)
-    }
-}
-
-impl<R: Rand> Encrypt for PKCS1Decrypt<R> {
-    fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.encrypt_block_x(plaintext, ciphertext)
-    }
-}
-
-impl<R: Rand> Decrypt for PKCS1Decrypt<R> {
-    fn decrypt(&self, ciphertext: &[u8], plaintext: &mut Vec<u8>) -> Result<(), CipherError> {
-        self.decrypt_block_x(ciphertext, plaintext)
     }
 }
 

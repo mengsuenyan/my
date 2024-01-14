@@ -83,7 +83,7 @@ impl<E: BlockEncryptX> CCM<E> {
     }
 
     fn check_nonce_size(nonce_size: usize) -> Result<(), CipherError> {
-        if !(nonce_size >= 7 || nonce_size <= 13) {
+        if !(7..=13).contains(&nonce_size) {
             Err(CipherError::AEError(format!(
                 "Invalid Nonce length `{}`, it should be in the range of `[7,13]`",
                 nonce_size

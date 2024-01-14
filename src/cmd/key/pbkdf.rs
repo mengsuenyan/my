@@ -160,7 +160,7 @@ impl PBKDF1Cmd {
 
         let hasher = HashCmd::new(&[]).hasher_cmd(hm).generate_hasher()?;
 
-        let key = read(k).unwrap();
+        let key = read(k)?;
         let salt = match s {
             Some(f) => read(f)?,
             None => vec![],
@@ -187,7 +187,7 @@ impl PBKDF2Cmd {
 
         let hmac = HMACCmd.generate_hmac(hm)?;
 
-        let key = read(k).unwrap();
+        let key = read(k)?;
         let salt = match s {
             Some(f) => read(f)?,
             None => vec![],
