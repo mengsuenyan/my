@@ -97,8 +97,7 @@ impl<'de, T: CurveGroup> Deserialize<'de> for PrivateKey<T> {
         D: serde::Deserializer<'de>,
     {
         let key = Vec::<u8>::deserialize(deserializer)?;
-        let key =
-            Self::deserialize_uncompressed(key.as_slice()).map_err(D::Error::custom)?;
+        let key = Self::deserialize_uncompressed(key.as_slice()).map_err(D::Error::custom)?;
 
         Ok(key)
     }
