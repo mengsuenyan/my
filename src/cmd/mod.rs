@@ -66,3 +66,6 @@ pub use mac::MACCmd;
 
 mod pkcs;
 pub use pkcs::PKCSCmd;
+
+mod group;
+pub use group::GroupCmd;

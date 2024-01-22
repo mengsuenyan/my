@@ -16,6 +16,8 @@ use cipher::stream_cipher::StreamCipherX;
 use cipher::{BlockCipher, CipherError};
 use crypto_hash::cshake::CSHAKE256;
 use crypto_hash::{DigestX, HasherBuilder, HasherType, XOF};
+use encode::base::Base64;
+use encode::{Decode, Encode};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroize;
@@ -343,10 +345,19 @@ impl SkyEncrypt {
         let _x = self.cipher.stream_encrypt_x(in_data, &mut data)?;
         let _x = self.cipher.stream_encrypt_finish_x(&mut data)?;
 
-        Ok(data)
+        let mut b64 = Base64::new(true);
+        let mut b64_data = Vec::with_capacity(data.len() + (data.len() >> 1));
+        b64.encode(&mut data.as_slice(), &mut b64_data)?;
+
+        Ok(b64_data)
     }
 
-    pub fn decrypt(&mut self, in_data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    pub fn decrypt(&mut self, mut in_data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let mut b64 = Base64::new(true);
+        let mut buf = Vec::with_capacity(in_data.len());
+        b64.decode(&mut in_data, &mut buf)?;
+        let in_data = buf.as_slice();
+
         let header = SkyEncryptHeader::try_from(in_data)?;
         let cipher_data = &in_data[header.file_offset()..];
 
