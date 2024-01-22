@@ -44,7 +44,7 @@ impl<C: CurveGroup, H: DigestX, R: Rand> ECDSA<C, H, R> {
         }
     }
 
-    const fn curve_order_byte_size() -> usize {
+    pub const fn curve_order_byte_size() -> usize {
         (<<C as Group>::ScalarField as PrimeField>::MODULUS_BIT_SIZE as usize + 7) >> 3
     }
 
