@@ -12,6 +12,7 @@
 = TODO
 
 - 当rust支持泛型impl中支持常数参数时, 修改`BlockEncryptX/BlockDecryptX`的实现;
+- 程序中的一些密钥内存值没有zerozize销毁掉;
 
 = crypto_hash
 
@@ -80,6 +81,8 @@
 
 - RSA PSS: 实现标准*PKCS v2.2*;
   - PSSSign, PSSVerify;
+- ECDSA: 实现标准*FIPS 186-5*;
+  - short weierstrass曲线: P224, P256, P384, P521;
 
 == AuthenticationCipher
 
@@ -143,6 +146,11 @@
 - Argon2: 基于密码的密钥派生函数(使用内存作为成本函数, 抗GPU, ASIC), 实现标准*RFC 9106*;
   - `Argon2`;
 
+== group
+
+- 曲线:
+  - short weierstrass曲线: P224, P256, P384, P521. 实现标准*SP 800-186*;
+
 = utils
 
 辅助工具crate
@@ -168,3 +176,4 @@
 - `my sky`: 自定义的文件加密;
 - `my mac`: 消息认证码;
 - `my p`: 公钥加密;
+- `my g`: 群相关命令;

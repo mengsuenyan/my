@@ -357,19 +357,19 @@ impl<H: DigestX, R: Rand> PSSSign<H, R> {
 }
 
 impl<H: DigestX> Verify for PSSVerify<H> {
-    fn verify(&self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError> {
+    fn verify(&mut self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError> {
         self.verify_inner(msg, sign)
     }
 }
 
 impl<H: DigestX, R: Rand> Verify for PSSSign<H, R> {
-    fn verify(&self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError> {
+    fn verify(&mut self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError> {
         self.pss.verify_inner(msg, sign)
     }
 }
 
 impl<H: DigestX, R: Rand> Sign for PSSSign<H, R> {
-    fn sign(&self, msg: &[u8], sign: &mut Vec<u8>) -> Result<(), CipherError> {
+    fn sign(&mut self, msg: &[u8], sign: &mut Vec<u8>) -> Result<(), CipherError> {
         self.sign_inner(msg, sign)
     }
 }
@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(&pk, key.public_key());
 
         let (sha256, rd) = (SHA256::new(), DefaultRand::default());
-        let pss = PSSSign::new(key, sha256, rd, Some(0)).unwrap();
+        let mut pss = PSSSign::new(key, sha256, rd, Some(0)).unwrap();
 
         pss.verify(msg.as_bytes(), sig.as_slice()).unwrap();
         let mut signature = vec![];

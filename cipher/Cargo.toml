@@ -1,6 +1,6 @@
 [package]
 name = "cipher"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,6 +16,7 @@ num-traits = "0.2.15"
 num-integer = "0.1.45"
 anyhow = "1.0.75"
 serde = { version = "1.0.195", features = ["std", "derive"], default-features = false}
+group = {path = "../group"}
 
 [dev-dependencies]
 encode = {path = "../encode"}

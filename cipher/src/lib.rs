@@ -45,11 +45,11 @@ pub trait Cipher: Encrypt + Decrypt {}
 impl<T> Cipher for T where T: Encrypt + Decrypt {}
 
 pub trait Sign {
-    fn sign(&self, msg: &[u8], sign: &mut Vec<u8>) -> Result<(), CipherError>;
+    fn sign(&mut self, msg: &[u8], sign: &mut Vec<u8>) -> Result<(), CipherError>;
 }
 
 pub trait Verify {
-    fn verify(&self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError>;
+    fn verify(&mut self, msg: &[u8], sign: &[u8]) -> Result<(), CipherError>;
 }
 
 pub trait Signer: Sign + Verify {}

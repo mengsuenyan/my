@@ -82,7 +82,7 @@ impl Cmd for RSACmd {
         let mut sig = Vec::with_capacity(256);
         if let Some(f) = m.get_one::<PathBuf>("verify") {
             let key: PublicKey = serde_json::from_value(key["pk"].clone()).unwrap();
-            let pss = PSSVerify::new(key, hasher, None).unwrap();
+            let mut pss = PSSVerify::new(key, hasher, None).unwrap();
             let mut f = File::open(f).unwrap();
             let _len = f.read_to_end(&mut sig).unwrap();
             match pss.verify(msg.as_slice(), sig.as_slice()) {
@@ -97,7 +97,7 @@ impl Cmd for RSACmd {
         } else {
             let key: PrivateKey = serde_json::from_value(key).unwrap();
             let rd = DefaultRand::default();
-            let pss = PSSSign::new(key, hasher, rd, None).unwrap();
+            let mut pss = PSSSign::new(key, hasher, rd, None).unwrap();
             pss.sign(msg.as_slice(), &mut sig).unwrap();
             let b = BigUint::from_bytes_be(sig.as_slice());
 
