@@ -16,6 +16,8 @@
 
 pub mod curve25519;
 pub mod curve448;
+pub mod edwards255198;
+pub mod edwards448;
 pub mod p224;
 pub mod p256;
 pub mod p384;
