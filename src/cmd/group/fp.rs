@@ -51,7 +51,7 @@ impl Cmd for FpCmd {
                     .about("montgomery curve paramters to twisted edwards parameters, SP 800-186")
                     .arg(
                         Arg::new("A")
-                            .help("curve fomrat parameter A of x")
+                            .help("curve fomrat parameter `A` or `a` of x")
                             .short('a')
                             .action(ArgAction::Set)
                             .required(true)
@@ -59,7 +59,7 @@ impl Cmd for FpCmd {
                     )
                     .arg(
                         Arg::new("B")
-                            .help("curve fomrat parameter B of y")
+                            .help("curve fomrat parameter `B` or `d` of y")
                             .short('b')
                             .action(ArgAction::Set)
                             .required(true)
@@ -67,7 +67,7 @@ impl Cmd for FpCmd {
                     )
                     .arg(
                         Arg::new("X")
-                            .help("generator point G_x")
+                            .help("generator point `G_u` or `G_x`")
                             .short('x')
                             .action(ArgAction::Set)
                             .required(true)
@@ -75,7 +75,7 @@ impl Cmd for FpCmd {
                     )
                     .arg(
                         Arg::new("Y")
-                            .help("generator point G_y")
+                            .help("generator point `G_v` or `G_y`")
                             .short('y')
                             .action(ArgAction::Set)
                             .required(true)
@@ -156,11 +156,11 @@ impl FpCmd {
         if !m.get_flag("reverse") {
             let b_inv = Self::inv(p, &b);
             let te_a = ((&a + 2u8) * &b_inv) % p;
-            let te_b = ((&a - 2u8) * &b_inv) % p;
+            let te_b = ((&a + (p - 2u8)) * &b_inv) % p;
             let v_inv = Self::inv(p, &gv);
             let u_1_inv = Self::inv(p, &(&gu + 1u8));
             let te_x = (&gu * v_inv) % p;
-            let te_y = ((&gu - 1u8) * u_1_inv) % p;
+            let te_y = ((&gu + (p - 1u8)) * u_1_inv) % p;
             println!("============================================Montgomery2TwistedEdwards============================================");
             println!("a: {}", te_a);
             println!("d: {}", te_b);
@@ -169,11 +169,11 @@ impl FpCmd {
             println!("=================================================================================================================");
         } else {
             let (a, d, x, y) = (a, b, gu, gv);
-            let a_d = &a - &d;
+            let a_d = (&a + (p - &d)) % p;
             let a_d_inv = Self::inv(p, &a_d);
             let m_a = (((&a + &d) * &a_d_inv) * 2u8) % p;
             let m_b = (a_d_inv * 4u8) % p;
-            let one_y = BigUint::from(1u8) - &y;
+            let one_y = (BigUint::from(1u8) + (p - &y)) % p;
             let one_yx = &one_y * &x;
             let one_y_inv = Self::inv(p, &one_y);
             let one_yx_inv = Self::inv(p, &one_yx);
