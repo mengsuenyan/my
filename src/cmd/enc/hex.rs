@@ -4,8 +4,8 @@
 use super::SType;
 use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use num_bigint::BigInt;
-use num_traits::Num;
+use num_bigint::{BigInt, BigUint};
+use num_traits::{Num, Signed, ToBytes};
 use std::cell::Cell;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
@@ -81,9 +81,13 @@ impl HexCmd {
             .map_err(|e| StdIoErr::new(StdIoErrKind::Other, format!("{e}")))?;
 
         if self.is_little_endian.get() {
-            let n = n.to_signed_bytes_le();
-            let n = BigInt::from_signed_bytes_be(n.as_slice());
-            write!(stream, "{:x}", n)
+            let x = n.abs().to_biguint().unwrap();
+            let x = BigUint::from_bytes_be(&x.to_le_bytes());
+            if n.is_negative() {
+                write!(stream, "-{:x}", x)
+            } else {
+                write!(stream, "{:x}", x)
+            }
         } else {
             write!(stream, "{:x}", n)
         }

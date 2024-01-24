@@ -1,16 +1,18 @@
 //! FIPS 186-4
 //! FIPS 186-5: Digital Signature Standard(DSS)
 //!
+//! [RFC 8032: EdDSA](https://datatracker.ietf.org/doc/html/rfc8032)
 //!
 
 pub mod ecdsa;
 pub use ecdsa::ECDSA;
+pub mod eddsa;
 pub mod key;
 pub use key::{Key, PrivateKey, PublicKey};
 pub mod sig;
 pub use sig::Signature;
 
-use group::curve::{p224, p256, p384, p521};
+use group::curve::{edwards25519, p224, p256, p384, p521};
 // p224
 pub type P224Affine = p224::Affine;
 pub type P224Projective = p224::Projective;
@@ -35,6 +37,11 @@ pub type P521Projective = p521::Projective;
 pub type P521Curve = p521::Projective;
 pub type P521Key = Key<P521Curve>;
 pub type ECDSAWithP521<Hasher, Rng> = ECDSA<P521Curve, Hasher, Rng>;
+
+pub type Ed25519Affine = edwards25519::Affine;
+pub type Ed25519Projectvie = edwards25519::Projective;
+pub type Ed25519Curve = edwards25519::Projective;
+pub use eddsa::{Ed25519Key, Ed25519PrivateKey, Ed25519PublicKey};
 
 #[cfg(test)]
 mod tests;
