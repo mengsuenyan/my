@@ -11,6 +11,8 @@ use std::thread;
 use std::time::Instant;
 use zeroize::Zeroize;
 
+use super::SkyEncrypt;
+
 pub struct SkyCmd;
 
 impl Cmd for SkyCmd {
@@ -74,6 +76,7 @@ impl Cmd for SkyCmd {
                     .long("hash")
                     .default_value("sha3-256")
                     .action(ArgAction::Set)
+                    .value_parser(["sha3-256", "sha2-256"])
                     .help("specified the hash function name")
             )
             .arg(
@@ -81,6 +84,7 @@ impl Cmd for SkyCmd {
                     .long("cipher")
                     .default_value("aes256/ofb")
                     .action(ArgAction::Set)
+                    .value_parser(["aes256/ofb"])
                     .help("specified the cipher function name, format: block_cipher/cipher_name")
             )
     }
@@ -211,7 +215,18 @@ impl Cmd for SkyCmd {
                             continue;
                         }
 
-                        let Some(filename) = Self::read_file(p.path(), &mut data) else {
+                        let filename = if !is_decrypt {
+                            Self::read_file_and_check_hash(
+                                p.path(),
+                                out_path.as_path(),
+                                &mut sky,
+                                &mut data,
+                            )
+                        } else {
+                            Self::read_file(p.path(), &mut data)
+                        };
+
+                        let Some(filename) = filename else {
                             continue;
                         };
 
@@ -265,6 +280,31 @@ impl SkyCmd {
         filename
     }
 
+    fn read_file_and_check_hash(
+        p: &Path,
+        out_path: &Path,
+        sky: &mut SkyEncrypt,
+        data: &mut Vec<u8>,
+    ) -> Option<String> {
+        let Some(filename) = Self::read_file(p, data) else {
+            return None;
+        };
+
+        let Ok(existed_data) = std::fs::read(out_path) else {
+            return Some(filename);
+        };
+
+        if sky.is_encrypted_data_by_the_data(&existed_data, data.as_slice()) {
+            log::trace!(
+                "{} not need to encrypt because the content hash not changed",
+                p.display()
+            );
+            return None;
+        }
+
+        Some(filename)
+    }
+
     fn output_path(p: &Path, mut in_path: PathBuf, mut out_path: PathBuf) -> Option<PathBuf> {
         let tmp = if !in_path.is_file() {
             p
@@ -279,7 +319,8 @@ impl SkyCmd {
             }
         };
 
-        if !in_path.is_file() && in_path != out_path {
+        let is_same_path = in_path == out_path;
+        if !in_path.is_file() && !is_same_path {
             in_path.pop();
             let suffix = match p.strip_prefix(in_path) {
                 Ok(x) => x,
@@ -292,7 +333,7 @@ impl SkyCmd {
             out_path.push(suffix);
         }
 
-        if !out_path.pop() {
+        if !is_same_path && !out_path.pop() {
             log::error!(
                 "cannot pop the filename of the path `{}`",
                 out_path.display()
