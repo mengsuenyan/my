@@ -18,6 +18,7 @@ use crypto_hash::cshake::CSHAKE256;
 use crypto_hash::{DigestX, HasherBuilder, HasherType, XOF};
 use encode::base::Base64;
 use encode::{Decode, Encode};
+use num_bigint::BigUint;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroize;
@@ -93,7 +94,18 @@ impl SkyEncryptPara {
             "sky/key".as_bytes(),
         )
         .map_err(|e| format!("{e}"))?;
-        cshake.write_all(master_key).map_err(|e| format!("{e}"))?;
+        let (mut aes_key, mut cnt, bound) = (
+            BigUint::from_bytes_le(master_key),
+            master_key.len() as u64,
+            1000 * 8,
+        );
+        while aes_key.bits() < bound {
+            aes_key *= cnt.pow(2);
+            cnt += (aes_key.bits() + 7) >> 3;
+        }
+        let mut aes_key = aes_key.to_bytes_be();
+        aes_key.truncate((bound >> 3) as usize);
+        cshake.write_all(&aes_key).map_err(|e| format!("{e}"))?;
         let mut key = cshake.finalize();
         let block_cipher = AES256::new(key.as_slice().try_into().map_err(|e| format!("{e}"))?);
         key.zeroize();
@@ -259,6 +271,71 @@ impl TryFrom<&[u8]> for SkyEncryptHeader {
 }
 
 impl SkyEncryptHeader {
+    // 仅解析header, 不验证数据的总长度
+    fn only_parse_header_from_b64(b64: &[u8]) -> anyhow::Result<Self> {
+        let mut base64 = Base64::new(true);
+        let mut value = Vec::with_capacity(1024);
+        let mut tmp = &b64[..b64.len().min((Self::min_len() << 1) & !3usize)];
+        base64.decode(&mut tmp, &mut value)?;
+
+        let sl = Self::start_flag().len();
+        let min_len = Self::min_len();
+        anyhow::ensure!(
+            value.len() > min_len,
+            "Sky encrypt data as least {} bytes",
+            min_len
+        );
+        anyhow::ensure!(
+            Self::start_flag()
+                .into_iter()
+                .zip(value.iter())
+                .all(|(a, &b)| a == b),
+            "Sky encrypt data invalid header"
+        );
+        let hash_name_len = u16::from_be_bytes([value[sl], value[sl + 1]]) as usize;
+        let cipher_name_len = u16::from_be_bytes([value[sl + 2], value[sl + 3]]) as usize;
+        let file_name_len = u16::from_be_bytes([value[sl + 4], value[sl + 5]]) as usize;
+        let hash_len =
+            u32::from_be_bytes([value[sl + 6], value[sl + 7], value[sl + 8], value[sl + 9]])
+                as usize;
+        let file_len = u32::from_be_bytes([
+            value[sl + 10],
+            value[sl + 11],
+            value[sl + 12],
+            value[sl + 13],
+        ]) as usize;
+        let header_len = min_len + hash_name_len + cipher_name_len + file_name_len + hash_len;
+
+        let mut tmp = &b64[..b64.len().min((header_len << 1) & !3usize)];
+        value.clear();
+        base64.decode(&mut tmp, &mut value)?;
+        anyhow::ensure!(
+            value.len() >= header_len,
+            "Sky encrypt data header need to at least {} bytes, but the real is {} bytes",
+            header_len,
+            value.len()
+        );
+
+        Ok(Self {
+            flag: Self::start_flag(),
+            hash_name_len: hash_name_len as u16,
+            cipher_name_len: cipher_name_len as u16,
+            file_name_len: file_name_len as u16,
+            hash_len: hash_len as u32,
+            file_len: file_len as u32,
+            hash_name: value[min_len..(min_len + hash_name_len)].to_vec(),
+            cipher_name: value
+                [(min_len + hash_name_len)..(min_len + hash_name_len + cipher_name_len)]
+                .to_vec(),
+            file_name: value[(min_len + hash_name_len + cipher_name_len)
+                ..(min_len + hash_name_len + cipher_name_len + file_name_len)]
+                .to_vec(),
+            digest: value[(min_len + hash_name_len + cipher_name_len + file_name_len)
+                ..(min_len + hash_name_len + cipher_name_len + file_name_len + hash_len)]
+                .to_vec(),
+        })
+    }
+
     const fn min_len() -> usize {
         6 + 2 + 2 + 2 + 4 + 4
     }
@@ -392,5 +469,17 @@ impl SkyEncrypt {
         );
 
         Ok(data)
+    }
+
+    /// 检查`encrypted_data`是不是由`data`加密得到的
+    pub fn is_encrypted_data_by_the_data(&mut self, encrypted_data: &[u8], data: &[u8]) -> bool {
+        if let Ok(header) = SkyEncryptHeader::only_parse_header_from_b64(encrypted_data) {
+            let h = self.digest.digest(data);
+            if h == header.digest {
+                return true;
+            }
+        }
+
+        false
     }
 }
