@@ -10,7 +10,7 @@
 //! 文件内容
 //!
 
-use super::SkyEncryptHeader;
+use super::{SkyEncryptHeader, SkyVer};
 use cipher::block_cipher::AES256;
 use cipher::cipher_mode::AES256Ofb;
 use cipher::stream_cipher::StreamCipherX;
@@ -19,6 +19,7 @@ use crypto_hash::cshake::CSHAKE256;
 use crypto_hash::{DigestX, HasherBuilder, HasherType, XOF};
 use num_bigint::BigUint;
 use std::io::Write;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use zeroize::Zeroize;
 
@@ -27,12 +28,6 @@ pub struct SkyEncryptPara {
     block_cipher_name: String,
     cipher_name: String,
     key: String,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum SkyVer {
-    V1 = 1,
 }
 
 #[allow(clippy::type_complexity)]
@@ -217,12 +212,50 @@ impl SkyEncrypt {
     /// 检查`encrypted_data`是不是由`data`加密得到的
     pub fn is_encrypted_data_by_the_data(&mut self, encrypted_data: &[u8], data: &[u8]) -> bool {
         if let Ok(header) = SkyEncryptHeader::only_parse_header_from_b64(encrypted_data) {
-            let h = self.digest.digest(data);
-            if h == header.digest {
+            let Ok(ver) = SkyVer::try_from(header.version()) else {
+                return false;
+            };
+
+            let Ok(h1) = (match ver {
+                SkyVer::V1 => self.decrypt_digest_v1(&header),
+            }) else {
+                return false;
+            };
+
+            let h2 = self.digest.digest(data);
+            if h1 == h2 {
                 return true;
             }
         }
 
         false
+    }
+
+    pub fn detect_encrypted_info(p: &Path) -> anyhow::Result<String> {
+        let content = std::fs::read(p).map_err(|e| {
+            anyhow::Error::msg(format!(
+                "cannot detect the `{}` meta info, due to {}",
+                p.display(),
+                e
+            ))
+        })?;
+
+        let header = SkyEncryptHeader::only_parse_header_from_b64(&content).map_err(|e| {
+            anyhow::Error::msg(format!("cannot parse the encrypted data, due to {}", e))
+        })?;
+
+        let (hash, cipher, file) = (
+            String::from_utf8_lossy(&header.hash_name),
+            String::from_utf8_lossy(&header.cipher_name),
+            String::from_utf8_lossy(&header.file_name),
+        );
+
+        Ok(format!(
+            "{{ver: {}, hash: {}, cipher: {}, file: {}}}",
+            header.version(),
+            hash,
+            cipher,
+            file
+        ))
     }
 }

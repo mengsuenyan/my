@@ -87,10 +87,21 @@ impl Cmd for SkyCmd {
                     .value_parser(["aes256/ofb"])
                     .help("specified the cipher function name, format: block_cipher/cipher_name")
             )
+            .arg(
+                Arg::new("detect")
+                .long("detect")
+                .action(ArgAction::SetTrue)
+                .required(false)
+                .help("detect the encrypted file meta info")
+            )
     }
 
     fn run(&self, m: &ArgMatches) {
-        let (is_decrypt, is_replace) = (m.get_flag("decrypt"), m.get_flag("replace"));
+        let (is_decrypt, is_replace, is_detect) = (
+            m.get_flag("decrypt"),
+            m.get_flag("replace"),
+            m.get_flag("detect"),
+        );
         let in_path = m
             .get_one::<PathBuf>("dir")
             .cloned()
@@ -98,6 +109,13 @@ impl Cmd for SkyCmd {
             .canonicalize()
             .unwrap();
         assert!(in_path.exists(), "{} is not exist", in_path.display());
+
+        if is_detect {
+            let info = SkyEncrypt::detect_encrypted_info(&in_path).unwrap();
+            println!("{info}");
+            return;
+        }
+
         let out_path = match m.get_one::<PathBuf>("target-dir") {
             Some(x) => x.clone(),
             None => {
@@ -200,9 +218,14 @@ impl Cmd for SkyCmd {
                         }
 
                         let s_time = Instant::now();
-                        log::info!("start crypt the file `{}-{}`", p.id(), p.path().display());
+                        log::info!(
+                            "start {}crypt the file `{}-{}`",
+                            if is_decrypt { "de" } else { "en" },
+                            p.id(),
+                            p.path().display()
+                        );
                         let Some(out_path) =
-                            Self::output_path(p.path(), inpath.clone(), outpath.clone())
+                            Self::output_path(p.path(), inpath.as_path(), outpath.clone())
                         else {
                             continue;
                         };
@@ -241,7 +264,8 @@ impl Cmd for SkyCmd {
 
                         if Self::write_file(out_path, is_replace, content.as_slice()) {
                             log::info!(
-                                "end crypt the file `{}` took {:?}",
+                                "end {}crypt the file `{}` took {:?}",
+                                if is_decrypt { "de" } else { "en" },
                                 p.id(),
                                 s_time.elapsed()
                             )
@@ -305,43 +329,21 @@ impl SkyCmd {
         Some(filename)
     }
 
-    fn output_path(p: &Path, mut in_path: PathBuf, mut out_path: PathBuf) -> Option<PathBuf> {
-        let tmp = if !in_path.is_file() {
-            p
-        } else {
-            out_path.as_path()
-        };
-        let filename = match tmp.file_name() {
-            Some(f) => f.to_os_string(),
-            None => {
-                log::error!("cannot get the filename of the path `{}`", p.display());
-                return None;
-            }
-        };
-
-        let is_same_path = in_path == out_path;
-        if !in_path.is_file() && !is_same_path {
-            in_path.pop();
-            let suffix = match p.strip_prefix(in_path) {
-                Ok(x) => x,
+    fn output_path(p: &Path, in_path: &Path, mut out_path: PathBuf) -> Option<PathBuf> {
+        if !in_path.is_file() {
+            match p.strip_prefix(in_path) {
                 Err(e) => {
-                    log::error!("write the file `{}` failed due to: {}", p.display(), e);
+                    log::error!(
+                        "cannot get the filename of the path `{}`, due to: {e}",
+                        p.display()
+                    );
                     return None;
                 }
+                Ok(f) => {
+                    out_path.push(f);
+                }
             };
-
-            out_path.push(suffix);
         }
-
-        if !is_same_path && !out_path.pop() {
-            log::error!(
-                "cannot pop the filename of the path `{}`",
-                out_path.display()
-            );
-            return None;
-        }
-
-        out_path.push(filename);
 
         Some(out_path)
     }
