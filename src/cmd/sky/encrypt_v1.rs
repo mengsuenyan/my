@@ -5,28 +5,49 @@ use encode::{base::Base64, Decode, Encode};
 use std::io::Write;
 
 impl SkyEncrypt {
+    pub fn update_iv_from_header_v1(
+        &mut self,
+        header: &SkyEncryptHeader,
+    ) -> anyhow::Result<Vec<u8>> {
+        if let Some(update_iv) = self.update_iv.as_ref() {
+            self.iv_cshake.reset_x();
+            self.iv_cshake.write_all(self.key.as_slice())?;
+            self.iv_cshake.write_all(&header.file_name)?;
+            self.iv_cshake
+                .write_all(header.file_len.to_be_bytes().as_slice())?;
+            let iv = self.iv_cshake.finish_x();
+            update_iv(iv.clone())?;
+            Ok(iv)
+        } else {
+            anyhow::bail!("no update iv function")
+        }
+    }
+
+    fn update_iv_v1(&mut self, iv: Vec<u8>) -> anyhow::Result<()> {
+        if let Some(update_iv) = self.update_iv.as_ref() {
+            update_iv(iv)?;
+        }
+
+        Ok(())
+    }
+
     pub fn encrypt_v1(&mut self, in_data: &[u8], filename: &[u8]) -> anyhow::Result<Vec<u8>> {
         let mut header = SkyEncryptHeader::from(&*self);
         header.set_data_size(in_data.len());
         header.set_file_name(filename);
 
-        self.digest.reset_x();
-        self.digest.write_all(in_data)?;
-        let h = self.digest.finish_x();
-        header.set_digest(h);
+        let iv = self.update_iv_from_header_v1(&header)?;
 
-        if let Some(update_iv) = self.update_iv.as_ref() {
-            self.iv_cshake.reset_x();
-            self.iv_cshake.write_all(self.key.as_slice())?;
-            self.iv_cshake.write_all(filename)?;
-            self.iv_cshake
-                .write_all(header.file_len.to_be_bytes().as_slice())?;
-            let iv = self.iv_cshake.finish_x();
-            update_iv(iv)?;
-        }
+        let (h, mut encrypted_h) = (self.digest.digest(in_data), Vec::with_capacity(1024));
+        let _ = self
+            .cipher
+            .stream_encrypt_x(h.as_slice(), &mut encrypted_h)?;
+        let _ = self.cipher.stream_encrypt_finish_x(&mut encrypted_h);
+        header.set_digest(encrypted_h);
 
         let mut data = header.into_vec();
 
+        self.update_iv_v1(iv)?;
         let _x = self.cipher.stream_encrypt_x(in_data, &mut data)?;
         let _x = self.cipher.stream_encrypt_finish_x(&mut data)?;
 
@@ -35,6 +56,14 @@ impl SkyEncrypt {
         b64.encode(&mut data.as_slice(), &mut b64_data)?;
 
         Ok(b64_data)
+    }
+
+    pub fn decrypt_digest_v1(&mut self, header: &SkyEncryptHeader) -> anyhow::Result<Vec<u8>> {
+        let _ = self.update_iv_from_header_v1(header)?;
+        let mut h = Vec::with_capacity(header.digest.len());
+        let _ = self.cipher.stream_decrypt_x(&header.digest, &mut h)?;
+        let _ = self.cipher.stream_decrypt_finish_x(&mut h)?;
+        Ok(h)
     }
 
     pub fn decrypt_v1(&mut self, mut in_data: &[u8]) -> anyhow::Result<Vec<u8>> {
@@ -46,16 +75,15 @@ impl SkyEncrypt {
         let header = SkyEncryptHeader::try_from(in_data)?;
         let cipher_data = &in_data[header.file_offset()..];
 
-        if let Some(update_iv) = self.update_iv.as_ref() {
-            self.iv_cshake.reset_x();
-            self.iv_cshake.write_all(self.key.as_slice())?;
-            self.iv_cshake.write_all(header.file_name.as_slice())?;
-            self.iv_cshake
-                .write_all(header.file_len.to_be_bytes().as_slice())?;
-            let iv = self.iv_cshake.finish_x();
-            update_iv(iv)?;
-        }
+        let iv = self.update_iv_from_header_v1(&header)?;
 
+        let mut original_h = Vec::with_capacity(1024);
+        let _ = self
+            .cipher
+            .stream_decrypt_x(&header.digest, &mut original_h)?;
+        let _ = self.cipher.stream_decrypt_finish_x(&mut original_h);
+
+        self.update_iv_v1(iv)?;
         let mut data = Vec::with_capacity(1024);
         let _x = self.cipher.stream_decrypt_x(cipher_data, &mut data)?;
         let _x = self.cipher.stream_decrypt_finish_x(&mut data)?;
@@ -72,7 +100,7 @@ impl SkyEncrypt {
         let h = self.digest.finish_x();
 
         anyhow::ensure!(
-            h == header.digest,
+            h == original_h,
             "the decrypt data hash not equal to original file hash"
         );
 

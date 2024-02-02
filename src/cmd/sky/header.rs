@@ -2,6 +2,30 @@ use super::SkyEncrypt;
 use encode::base::Base64;
 use encode::Decode;
 
+macro_rules! def_sky_ver {
+    ([$($V: tt $(=$VAL: literal)?),+]) => {
+        #[derive(Clone, Copy, Eq, PartialEq)]
+        #[repr(u8)]
+        pub enum SkyVer {
+            $($V $(=$VAL)?,)+
+        }
+
+
+        impl TryFrom<u8> for SkyVer {
+            type Error = anyhow::Error;
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                match value {
+                    $(x if x == Self::$V as u8 => Ok(Self::$V),)+
+                    _ => anyhow::bail!("{} is a invlaid version code", value)
+                }
+            }
+        }
+
+    };
+}
+
+def_sky_ver!([V1 = 1]);
+
 pub struct SkyEncryptHeader {
     pub flag: [u8; 6],
     pub hash_name_len: u16,
@@ -18,7 +42,7 @@ pub struct SkyEncryptHeader {
 impl From<&SkyEncrypt> for SkyEncryptHeader {
     fn from(value: &SkyEncrypt) -> Self {
         Self {
-            flag: Self::start_flag(),
+            flag: Self::start_flag(value.version),
             hash_name_len: value.hash_name.as_bytes().len() as u16,
             cipher_name_len: value.cipher_name.as_bytes().len() as u16,
             file_name_len: 0,
@@ -36,15 +60,17 @@ impl TryFrom<&[u8]> for SkyEncryptHeader {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let sl = Self::start_flag().len();
+        let sl = Self::start_flag_len();
         let min_len = Self::min_len();
         anyhow::ensure!(
             value.len() > min_len,
             "Sky encrypt data as least {} bytes",
             min_len
         );
+
+        let version = SkyVer::try_from(value[0])?;
         anyhow::ensure!(
-            Self::start_flag()
+            Self::start_flag(version)
                 .into_iter()
                 .zip(value.iter())
                 .all(|(a, &b)| a == b),
@@ -71,7 +97,7 @@ impl TryFrom<&[u8]> for SkyEncryptHeader {
         );
 
         Ok(Self {
-            flag: Self::start_flag(),
+            flag: Self::start_flag(version),
             hash_name_len: hash_name_len as u16,
             cipher_name_len: cipher_name_len as u16,
             file_name_len: file_name_len as u16,
@@ -99,15 +125,16 @@ impl SkyEncryptHeader {
         let mut tmp = &b64[..b64.len().min((Self::min_len() << 1) & !3usize)];
         base64.decode(&mut tmp, &mut value)?;
 
-        let sl = Self::start_flag().len();
+        let sl = Self::start_flag_len();
         let min_len = Self::min_len();
         anyhow::ensure!(
             value.len() > min_len,
             "Sky encrypt data as least {} bytes",
             min_len
         );
+        let version = SkyVer::try_from(value[0])?;
         anyhow::ensure!(
-            Self::start_flag()
+            Self::start_flag(version)
                 .into_iter()
                 .zip(value.iter())
                 .all(|(a, &b)| a == b),
@@ -138,7 +165,7 @@ impl SkyEncryptHeader {
         );
 
         Ok(Self {
-            flag: Self::start_flag(),
+            flag: Self::start_flag(version),
             hash_name_len: hash_name_len as u16,
             cipher_name_len: cipher_name_len as u16,
             file_name_len: file_name_len as u16,
@@ -161,8 +188,12 @@ impl SkyEncryptHeader {
         6 + 2 + 2 + 2 + 4 + 4
     }
 
-    pub const fn start_flag() -> [u8; 6] {
-        [0x1, 0x2, 0x53, 0x6b, 0x79, 0x03]
+    pub const fn start_flag(version: SkyVer) -> [u8; 6] {
+        [version as u8, 0x2, 0x53, 0x6b, 0x79, 0x03]
+    }
+
+    pub const fn start_flag_len() -> usize {
+        Self::start_flag(SkyVer::V1).len()
     }
 
     pub fn file_offset(&self) -> usize {
@@ -201,5 +232,9 @@ impl SkyEncryptHeader {
         v.extend(self.file_name);
         v.extend(self.digest);
         v
+    }
+
+    pub fn version(&self) -> u8 {
+        self.flag[0]
     }
 }
