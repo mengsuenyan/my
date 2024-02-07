@@ -1,9 +1,14 @@
 use crate::{Decode, Encode, EncodeError};
-use std::io::{Read, Write};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    sync::mpsc::TryRecvError,
+};
 
 #[derive(Clone)]
 pub struct Base64 {
     table: &'static [u8; 64],
+    dtable: &'static [u8; 128],
 }
 
 impl Base64 {
@@ -15,6 +20,21 @@ impl Base64 {
         b'8', b'9', b'+', b'/',
     ];
 
+    const BASE64_STD_D: [u8; 128] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+        61, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0,
+    ];
+    const BASE64_URL_D: [u8; 128] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+        61, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 63, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0,
+    ];
+
     const BASE64_URL: [u8; 64] = [
         b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J', b'K', b'L', b'M', b'N', b'O',
         b'P', b'Q', b'R', b'S', b'T', b'U', b'V', b'W', b'X', b'Y', b'Z', b'a', b'b', b'c', b'd',
@@ -23,24 +43,56 @@ impl Base64 {
         b'8', b'9', b'-', b'_',
     ];
 
-    fn code_to_idx(&self, code: u8) -> Result<u8, EncodeError> {
-        self.table
-            .iter()
-            .enumerate()
-            .find(|x| *x.1 == code)
-            .map(|x| x.0 as u8)
-            .ok_or(EncodeError::InvalidBaseCodeInDec(char::from(code)))
-    }
-
     /// `is_std`使用标准码表, 还是URL版本码表
     pub fn new(is_std: bool) -> Self {
-        let table = if is_std {
-            &Self::BASE64_STD
+        let (table, dtable) = if is_std {
+            (&Self::BASE64_STD, &Self::BASE64_STD_D)
         } else {
-            &Self::BASE64_URL
+            (&Self::BASE64_URL, &Self::BASE64_URL_D)
         };
 
-        Self { table }
+        Self { table, dtable }
+    }
+
+    fn encode_inner<W: Write>(
+        table: &'static [u8; 64],
+        chunks: &[u8],
+        data: &mut W,
+    ) -> Result<usize, EncodeError> {
+        let mut olen = 0;
+        for d in chunks.chunks_exact(3) {
+            let mut x = [0u8; 4];
+            x[0] = table[(d[0] >> 2) as usize];
+            x[1] = table[(((d[0] & 0x3) << 4) | (d[1] >> 4)) as usize];
+            x[2] = table[(((d[1] & 0xf) << 2) | (d[2] >> 6)) as usize];
+            x[3] = table[(d[2] & 0x3f) as usize];
+            olen += data.write(&x)?;
+        }
+        Ok(olen)
+    }
+
+    fn decode_inner<W: Write>(
+        table: &'static [u8; 128],
+        chunks: &[u8],
+        data: &mut W,
+    ) -> Result<usize, EncodeError> {
+        let mut olen = 0;
+        for d in chunks.chunks_exact(4) {
+            let c = [
+                table[d[0] as usize],
+                table[d[1] as usize],
+                table[d[2] as usize],
+                table[d[3] as usize],
+            ];
+
+            let x = [
+                (c[0] << 2) | (c[1] >> 4),
+                (c[1] << 4) | (c[2] >> 2),
+                (c[2] << 6) | c[3],
+            ];
+            olen += data.write(&x)?;
+        }
+        Ok(olen)
     }
 }
 
@@ -53,34 +105,69 @@ impl Encode for Base64 {
         let (mut buf, mut olen) = (Vec::with_capacity(1024), 0);
 
         let ilen = in_data.read_to_end(&mut buf)?;
-        let mut itr = buf.chunks_exact(3);
+        let len = buf.len();
+        let remainder = buf[(len - len % 3)..len].to_vec();
+        buf.truncate(len - len % 3);
 
-        for d in &mut itr {
-            let mut x = [0u8; 4];
-            x[0] = self.table[(d[0] >> 2) as usize];
-            x[1] = self.table[(((d[0] & 0x3) << 4) | (d[1] >> 4)) as usize];
-            x[2] = self.table[(((d[1] & 0xf) << 2) | (d[2] >> 6)) as usize];
-            x[3] = self.table[(d[2] & 0x3f) as usize];
-            out_data.write_all(&x)?;
-            olen += 4;
+        if buf.len() > (1 << 29) {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::scope::<'_, _, Result<(), EncodeError>>(|s| {
+                let l = ((buf.len() / 3) / num_cpus::get().max(1)).max(1) * 3;
+                for (i, chunks) in buf.chunks(l).enumerate() {
+                    let sender = sender.clone();
+                    let table = self.table;
+                    s.spawn(move || {
+                        let mut buf = Vec::with_capacity(chunks.len() * 4 / 3 + 105);
+                        let _ = Self::encode_inner(table, chunks, &mut buf).unwrap();
+                        sender.send((i, buf)).unwrap();
+                    });
+                }
+
+                drop(sender);
+                let (mut cursor, mut recv_buf) = (0, HashMap::with_capacity(1024));
+                loop {
+                    match receiver.try_recv() {
+                        Ok((idx, data)) => {
+                            if idx == cursor {
+                                olen += out_data.write(&data)?;
+                                cursor += 1;
+                            } else {
+                                recv_buf.insert(idx, data);
+                            }
+                        }
+                        Err(TryRecvError::Disconnected) => {
+                            if recv_buf.is_empty() {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if let Some(data) = recv_buf.remove(&cursor) {
+                        olen += out_data.write(&data)?;
+                        cursor += 1;
+                    }
+                }
+
+                Ok(())
+            })?;
+        } else {
+            olen += Self::encode_inner(self.table, &buf, out_data)?;
         }
 
-        if !itr.remainder().is_empty() {
+        if !remainder.is_empty() {
             let mut d = [0u8; 3];
-            d[..itr.remainder().len()].copy_from_slice(itr.remainder());
+            d[..remainder.len()].copy_from_slice(&remainder);
 
-            let mut x = [0u8; 4];
-            x[0] = self.table[(d[0] >> 2) as usize];
-            x[1] = self.table[(((d[0] & 0x3) << 4) | (d[1] >> 4)) as usize];
-            x[2] = self.table[(((d[1] & 0xf) << 2) | (d[2] >> 6)) as usize];
-            x[3] = self.table[(d[2] & 0x3f) as usize];
-            x.iter_mut()
+            let mut data = Vec::<u8>::with_capacity(4);
+            olen += Self::encode_inner(self.table, &d, &mut data)?;
+            data.iter_mut()
                 .rev()
-                .take(8 * (3 - itr.remainder().len()) / 6)
+                .take(8 * (3 - remainder.len()) / 6)
                 .for_each(|a| *a = b'=');
-            out_data.write_all(&x)?;
-            olen += 4;
+            out_data.write_all(&data)?;
         }
+        out_data.flush()?;
 
         Ok((ilen, olen))
     }
@@ -101,23 +188,57 @@ impl Decode for Base64 {
             return Err(EncodeError::InvalidLenInDec(buf.len()));
         }
 
-        for d in buf[0..(buf.len() - 4)].chunks_exact(4) {
-            let mut c = [0u8; 4];
-            for (a, &b) in c.iter_mut().zip(d) {
-                *a = self.code_to_idx(b)?;
-            }
+        let remainer = buf[buf.len().saturating_sub(4)..].to_vec();
+        buf.truncate(buf.len().saturating_sub(4));
 
-            let x = [
-                (c[0] << 2) | (c[1] >> 4),
-                (c[1] << 4) | (c[2] >> 2),
-                (c[2] << 6) | c[3],
-            ];
-            out_data.write_all(&x)?;
-            olen += 3;
+        if buf.len() > (1 << 29) {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::scope::<'_, _, Result<(), EncodeError>>(|s| {
+                let l = ((buf.len() / 4) / num_cpus::get().max(1)).max(1) * 4;
+                for (i, chunks) in buf.chunks(l).enumerate() {
+                    let sender = sender.clone();
+                    let table = self.dtable;
+                    s.spawn(move || {
+                        let mut buf = Vec::with_capacity(chunks.len() * 3 / 4 + 105);
+                        let _ = Self::decode_inner(table, chunks, &mut buf).unwrap();
+                        sender.send((i, buf)).unwrap();
+                    });
+                }
+
+                drop(sender);
+                let (mut cursor, mut recv_buf) = (0, HashMap::with_capacity(1024));
+                loop {
+                    match receiver.try_recv() {
+                        Ok((idx, data)) => {
+                            if idx == cursor {
+                                olen += out_data.write(&data)?;
+                                cursor += 1;
+                            } else {
+                                recv_buf.insert(idx, data);
+                            }
+                        }
+                        Err(TryRecvError::Disconnected) => {
+                            if recv_buf.is_empty() {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if let Some(data) = recv_buf.remove(&cursor) {
+                        olen += out_data.write(&data)?;
+                        cursor += 1;
+                    }
+                }
+
+                Ok(())
+            })?;
+        } else {
+            olen += Self::decode_inner(self.dtable, &buf, out_data)?;
         }
 
         let (mut cnt, mut c) = (0, [0u8; 4]);
-        for &a in buf.iter().rev().take(4) {
+        for &a in remainer.iter().rev() {
             if a == b'=' {
                 cnt += 1;
             } else {
@@ -128,12 +249,8 @@ impl Decode for Base64 {
         if cnt == 4 || cnt == 3 {
             return Err(EncodeError::InvalidBaseCodeInDec('='));
         } else {
-            for (a, &b) in c
-                .iter_mut()
-                .take(4 - cnt)
-                .zip(buf.iter().skip(buf.len() - 4))
-            {
-                *a = self.code_to_idx(b)?;
+            for (a, b) in c.iter_mut().take(4 - cnt).zip(remainer) {
+                *a = self.dtable[b as usize];
             }
 
             let x = [
@@ -145,6 +262,7 @@ impl Decode for Base64 {
             out_data.write_all(&x[..tmp])?;
             olen += tmp;
         }
+        out_data.flush()?;
 
         Ok((ilen, olen))
     }

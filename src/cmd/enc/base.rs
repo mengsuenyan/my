@@ -2,8 +2,8 @@ use crate::cmd::Cmd;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use encode::base::{Base16, Base32, Base58, Base64};
 use encode::{Decode, Encode};
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Read, Write};
 use std::path::PathBuf;
 
 struct Base<T: Encode + Decode> {
@@ -46,9 +46,9 @@ impl<T: Encode + Decode> Base<T> {
                     .help("To specified the file to save the base string that include PIPE,STRING,FILE hex string")
             )
             .arg(
-                Arg::new("truncate")
-                    .long("truncate")
-                    .short('x')
+                Arg::new("replace")
+                    .long("replace")
+                    .short('r')
                     .action(ArgAction::SetTrue)
                     .required(false)
                     .help("Is whether to truncate the output File before save the hex string")
@@ -64,29 +64,33 @@ impl<T: Encode + Decode> Base<T> {
     }
 
     fn run(&mut self, m: &ArgMatches, pipe_data: Option<&[u8]>) {
-        let (p_str, iname, oname, is_decode) = (
+        let (p_str, iname, oname, is_decode, is_replace) = (
             m.get_one::<String>("str"),
             m.get_one::<PathBuf>("filename"),
             m.get_one::<PathBuf>("output"),
             m.get_flag("decode"),
+            m.get_flag("replace"),
         );
 
+        let mut file_data = iname
+            .map(|p| utils::io::VecRead::new(std::fs::read(p).unwrap()))
+            .unwrap_or_default();
+
+        let oname = if oname.is_none() && is_replace {
+            iname
+        } else {
+            oname
+        };
+
         let mut ostream: Box<dyn Write> = match oname {
-            Some(x) => {
-                if m.get_flag("truncate") {
-                    Box::new(BufWriter::new(
-                        OpenOptions::new()
-                            .write(true)
-                            .truncate(true)
-                            .open(x)
-                            .unwrap(),
-                    ))
-                } else {
-                    Box::new(BufWriter::new(
-                        OpenOptions::new().write(true).append(true).open(x).unwrap(),
-                    ))
-                }
-            }
+            Some(x) => Box::new(BufWriter::new(
+                OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .create_new(!(is_replace && x.is_file()))
+                    .open(x)
+                    .unwrap(),
+            )),
             None => Box::new(BufWriter::new(std::io::stdout().lock())),
         };
 
@@ -98,9 +102,8 @@ impl<T: Encode + Decode> Base<T> {
             self.exe_base(&mut p_str.as_bytes(), &mut ostream, is_decode);
         }
 
-        if let Some(name) = iname {
-            let mut f = BufReader::new(File::open(name).unwrap());
-            self.exe_base(&mut f, &mut ostream, is_decode);
+        if !file_data.is_empty() {
+            self.exe_base(&mut file_data, &mut ostream, is_decode);
         }
     }
 
