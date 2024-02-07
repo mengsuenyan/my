@@ -94,13 +94,21 @@ impl Cmd for SkyCmd {
                 .required(false)
                 .help("detect the encrypted file meta info")
             )
+            .arg(
+                Arg::new("base64")
+                .long("is-b64")
+                .action(ArgAction::SetTrue)
+                .required(false)
+                .help("to specify whether base64 encoding of decoding")
+            )
     }
 
     fn run(&self, m: &ArgMatches) {
-        let (is_decrypt, is_replace, is_detect) = (
+        let (is_decrypt, is_replace, is_detect, is_base64) = (
             m.get_flag("decrypt"),
             m.get_flag("replace"),
             m.get_flag("detect"),
+            m.get_flag("base64"),
         );
         let in_path = m
             .get_one::<PathBuf>("dir")
@@ -111,7 +119,7 @@ impl Cmd for SkyCmd {
         assert!(in_path.exists(), "{} is not exist", in_path.display());
 
         if is_detect {
-            let info = SkyEncrypt::detect_encrypted_info(&in_path).unwrap();
+            let info = SkyEncrypt::detect_encrypted_info(&in_path, is_base64).unwrap();
             println!("{info}");
             return;
         }
@@ -202,6 +210,7 @@ impl Cmd for SkyCmd {
                         .cipher_name(cipher.as_str())
                         .hash_name(hash.as_str())
                         .password(password)
+                        .base64(is_base64)
                         .build()
                     {
                         Err(e) => {
@@ -365,7 +374,7 @@ impl SkyCmd {
         match OpenOptions::new()
             .write(true)
             .truncate(true)
-            .create_new(!is_replace || !out_path.exists())
+            .create_new(!(is_replace && out_path.is_file()))
             .open(out_path.as_path())
         {
             Ok(mut f) => match f.write_all(data) {

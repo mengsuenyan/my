@@ -28,6 +28,7 @@ pub struct SkyEncryptPara {
     block_cipher_name: String,
     cipher_name: String,
     key: String,
+    is_base64: bool,
 }
 
 #[allow(clippy::type_complexity)]
@@ -40,6 +41,7 @@ pub struct SkyEncrypt {
     pub(super) key: Vec<u8>,
     pub(super) iv_cshake: CSHAKE256,
     pub(super) update_iv: Option<Box<dyn Fn(Vec<u8>) -> Result<(), CipherError>>>,
+    pub(super) is_base64: bool,
 }
 
 impl Default for SkyEncryptPara {
@@ -55,6 +57,7 @@ impl SkyEncryptPara {
             block_cipher_name: String::default(),
             cipher_name: String::default(),
             key: String::default(),
+            is_base64: false,
         }
     }
 
@@ -75,6 +78,11 @@ impl SkyEncryptPara {
 
     pub fn password(mut self, key: &str) -> Self {
         self.key = key.to_string();
+        self
+    }
+
+    pub fn base64(mut self, is_base64: bool) -> Self {
+        self.is_base64 = is_base64;
         self
     }
 
@@ -179,6 +187,7 @@ impl SkyEncryptPara {
             iv_cshake,
             key: master_key,
             update_iv,
+            is_base64: self.is_base64,
         })
     }
 }
@@ -211,7 +220,7 @@ impl SkyEncrypt {
 
     /// 检查`encrypted_data`是不是由`data`加密得到的
     pub fn is_encrypted_data_by_the_data(&mut self, encrypted_data: &[u8], data: &[u8]) -> bool {
-        if let Ok(header) = SkyEncryptHeader::only_parse_header_from_b64(encrypted_data) {
+        if let Ok(header) = SkyEncryptHeader::only_parse_header(encrypted_data, self.is_base64) {
             let Ok(ver) = SkyVer::try_from(header.version()) else {
                 return false;
             };
@@ -231,7 +240,7 @@ impl SkyEncrypt {
         false
     }
 
-    pub fn detect_encrypted_info(p: &Path) -> anyhow::Result<String> {
+    pub fn detect_encrypted_info(p: &Path, is_base64: bool) -> anyhow::Result<String> {
         let content = std::fs::read(p).map_err(|e| {
             anyhow::Error::msg(format!(
                 "cannot detect the `{}` meta info, due to {}",
@@ -240,7 +249,7 @@ impl SkyEncrypt {
             ))
         })?;
 
-        let header = SkyEncryptHeader::only_parse_header_from_b64(&content).map_err(|e| {
+        let header = SkyEncryptHeader::only_parse_header(&content, is_base64).map_err(|e| {
             anyhow::Error::msg(format!("cannot parse the encrypted data, due to {}", e))
         })?;
 

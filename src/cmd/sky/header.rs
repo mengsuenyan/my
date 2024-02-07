@@ -119,16 +119,21 @@ impl TryFrom<&[u8]> for SkyEncryptHeader {
 
 impl SkyEncryptHeader {
     // 仅解析header, 不验证数据的总长度
-    pub fn only_parse_header_from_b64(b64: &[u8]) -> anyhow::Result<Self> {
-        let mut base64 = Base64::new(true);
-        let mut value = Vec::with_capacity(1024);
-        let mut tmp = &b64[..b64.len().min((Self::min_len() << 1) & !3usize)];
-        base64.decode(&mut tmp, &mut value)?;
+    pub fn only_parse_header(b64: &[u8], is_base64: bool) -> anyhow::Result<Self> {
+        let value = if is_base64 {
+            let mut base64 = Base64::new(true);
+            let mut value = Vec::with_capacity(1024);
+            let mut tmp = &b64[..b64.len().min((Self::min_len() << 1) & !3usize)];
+            base64.decode(&mut tmp, &mut value)?;
+            value
+        } else {
+            b64[..b64.len().min(Self::min_len())].to_vec()
+        };
 
         let sl = Self::start_flag_len();
         let min_len = Self::min_len();
         anyhow::ensure!(
-            value.len() > min_len,
+            value.len() >= min_len,
             "Sky encrypt data as least {} bytes",
             min_len
         );
@@ -154,9 +159,15 @@ impl SkyEncryptHeader {
         ]) as usize;
         let header_len = min_len + hash_name_len + cipher_name_len + file_name_len + hash_len;
 
-        let mut tmp = &b64[..b64.len().min((header_len << 1) & !3usize)];
-        value.clear();
-        base64.decode(&mut tmp, &mut value)?;
+        let value = if is_base64 {
+            let mut base64 = Base64::new(true);
+            let mut value = Vec::with_capacity(1024);
+            let mut tmp = &b64[..b64.len().min((header_len << 1) & !3usize)];
+            base64.decode(&mut tmp, &mut value)?;
+            value
+        } else {
+            b64[..b64.len().min(header_len)].to_vec()
+        };
         anyhow::ensure!(
             value.len() >= header_len,
             "Sky encrypt data header need to at least {} bytes, but the real is {} bytes",

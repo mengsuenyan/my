@@ -1,4 +1,4 @@
-use crate::keccak::sha3::{Keccak, StateArray};
+use crate::keccak::sha3new::StateArray;
 use crate::{Digest, Output};
 use std::io::Write;
 
@@ -12,7 +12,6 @@ use std::io::Write;
 pub struct SHA3<const RATE: usize, const OUTPUT_LEN: usize> {
     out: StateArray,
     buf: Vec<u8>,
-    s2: StateArray,
     is_finalize: bool,
 }
 
@@ -20,16 +19,15 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
     // Keccak处理字串字节长度
     // const B: usize = 200;
     // B * 8 / 25
-    const W: usize = 64;
+    // const W: usize = 64;
     // log2(W)
-    const L: usize = 6;
+    // const L: usize = 6;
     const ROUNDS: usize = 24;
 
     pub fn new() -> Self {
         Self {
-            out: StateArray::const_default(Self::W),
+            out: StateArray::default(),
             buf: Vec::with_capacity(R),
-            s2: StateArray::const_default(Self::W),
             is_finalize: false,
         }
     }
@@ -91,26 +89,22 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
     }
 
     fn keccak(&mut self) {
-        let (mut s1, mut s2) = (&mut self.out, &mut self.s2);
-        for ri in (12 + 2 * Self::L - Self::ROUNDS)..(12 + 2 * Self::L) {
-            (s1, s2) = Keccak::rnd(ri, s1, s2);
-        }
+        self.out.permutation(Self::ROUNDS);
     }
 
     // 调用者保证p的长度是rate的整数倍
     fn sponge(&mut self, p: Option<&[u8]>) {
         match p {
             None => {
-                self.s2.update(self.buf.as_slice(), Self::W);
-                self.out ^= &self.s2;
+                let s = StateArray::update(self.buf.as_slice());
+                self.out ^= s;
                 self.keccak();
             }
             Some(p) => {
                 for chunk in p.chunks_exact(R) {
+                    let s = StateArray::update(chunk);
                     // S ^ (P || 0^c)
-                    self.s2.update(chunk, Self::W);
-                    self.out ^= &self.s2;
-
+                    self.out ^= s;
                     self.keccak();
                 }
             }
@@ -122,8 +116,8 @@ impl<const R: usize, const O: usize> SHA3<R, O> {
             return Output::from_vec(self.buf.iter().take(olen).copied().collect::<Vec<_>>());
         }
 
-        self.s2.update(self.buf.as_slice(), Self::W);
-        self.out ^= &self.s2;
+        let s = StateArray::update(self.buf.as_slice());
+        self.out ^= s;
 
         self.keccak();
 
@@ -202,7 +196,7 @@ impl<const R: usize, const O: usize> Digest for SHA3<R, O> {
     }
 
     fn reset(&mut self) {
-        self.out = StateArray::const_default(Self::W);
+        self.out = StateArray::default();
         self.buf.clear();
         self.is_finalize = false;
     }

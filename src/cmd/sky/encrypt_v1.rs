@@ -51,11 +51,15 @@ impl SkyEncrypt {
         let _x = self.cipher.stream_encrypt_x(in_data, &mut data)?;
         let _x = self.cipher.stream_encrypt_finish_x(&mut data)?;
 
-        let mut b64 = Base64::new(true);
-        let mut b64_data = Vec::with_capacity(data.len() + (data.len() >> 1));
-        b64.encode(&mut data.as_slice(), &mut b64_data)?;
+        if self.is_base64 {
+            let mut b64 = Base64::new(true);
+            let mut b64_data = Vec::with_capacity(data.len() + (data.len() >> 1));
+            b64.encode(&mut data.as_slice(), &mut b64_data)?;
 
-        Ok(b64_data)
+            Ok(b64_data)
+        } else {
+            Ok(data)
+        }
     }
 
     pub fn decrypt_digest_v1(&mut self, header: &SkyEncryptHeader) -> anyhow::Result<Vec<u8>> {
@@ -67,10 +71,15 @@ impl SkyEncrypt {
     }
 
     pub fn decrypt_v1(&mut self, mut in_data: &[u8]) -> anyhow::Result<Vec<u8>> {
-        let mut b64 = Base64::new(true);
-        let mut buf = Vec::with_capacity(in_data.len());
-        b64.decode(&mut in_data, &mut buf)?;
-        let in_data = buf.as_slice();
+        let mut buf = Vec::with_capacity(0);
+        let in_data = if self.is_base64 {
+            buf.reserve(in_data.len());
+            let mut b64 = Base64::new(true);
+            b64.decode(&mut in_data, &mut buf)?;
+            buf.as_slice()
+        } else {
+            in_data
+        };
 
         let header = SkyEncryptHeader::try_from(in_data)?;
         let cipher_data = &in_data[header.file_offset()..];

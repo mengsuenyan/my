@@ -11,7 +11,7 @@ members = [
 
 [package]
 name = "my"
-version = "0.11.3"
+version = "0.11.6"
 edition = "2021"
 rust-version = "1.72"
 
@@ -37,6 +37,7 @@ rand = { version = "0.8.5" }
 home = { version = "0.5.5" }
 encode = {path = "./encode"}
 cipher = { path = "./cipher"}
+utils = {path = "./utils"}
 crypto_hash = { path = "./crypto_hash" }
 zeroize = { version = "1.6.0", optional = true}
 rpassword = "7.3.1"
