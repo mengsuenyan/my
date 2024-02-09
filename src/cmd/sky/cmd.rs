@@ -273,9 +273,10 @@ impl Cmd for SkyCmd {
 
                         if Self::write_file(out_path, is_replace, content.as_slice()) {
                             log::info!(
-                                "end {}crypt the file `{}` took {:?}",
+                                "end {}crypt the file `{}-{}` took {:?}",
                                 if is_decrypt { "de" } else { "en" },
                                 p.id(),
+                                p.path().display(),
                                 s_time.elapsed()
                             )
                         }
