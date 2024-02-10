@@ -1,5 +1,4 @@
 use super::AES;
-use crate::BlockCipher;
 use utils::Block;
 #[cfg(feature = "sec-zeroize")]
 use zeroize::Zeroize;
@@ -28,6 +27,7 @@ macro_rules! impl_aes {
             const NR: usize = $NR;
             // 密钥派生(KEY Schedule)后的密钥字长度
             const NK_EXPAND: usize = (Self::NR + 1) << 2;
+            const BLOCK_SIZE: usize = 16;
 
             pub fn new(key: [u8; Self::KEY_SIZE]) -> Self {
                 let en_key = Self::new_encrypt(key);
@@ -337,6 +337,19 @@ macro_rules! impl_aes {
             }
         }
     };
+}
+
+impl AES {
+    #[inline]
+    pub(super) const fn sub_word(w: u32) -> u32 {
+        let i = w.to_be_bytes();
+        u32::from_be_bytes([
+            AES::SBOX0[i[0] as usize],
+            AES::SBOX0[i[1] as usize],
+            AES::SBOX0[i[2] as usize],
+            AES::SBOX0[i[3] as usize],
+        ])
+    }
 }
 
 impl_aes!(AES128, 128, 10);
