@@ -165,7 +165,7 @@ macro_rules! impl_block_cmd {
 
                 let Ok(key) = key.try_into() else {
                     anyhow::bail!(
-                        "cannot convert to sm4 key array with size {}",
+                        "cannot convert to aes key array with size {}",
                         SM4::KEY_SIZE
                     );
                 };
