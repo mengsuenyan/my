@@ -76,7 +76,7 @@ impl Cmd for SkyCmd {
                     .long("hash")
                     .default_value("sha3-256")
                     .action(ArgAction::Set)
-                    .value_parser(["sha3-256", "sha2-256"])
+                    .value_parser(["sha3-224", "sha3-256", "sha3-384", "sha3-512", "sha2-224", "sha2-256", "sha2-384", "sha2-512", "blake2b-128", "blake2b-256", "blake2b-384", "blake2b-512", "blake2s-128", "blake2s-224", "blake2s-256"])
                     .help("specified the hash function name")
             )
             .arg(

@@ -1,6 +1,7 @@
 use crate::sm3::SM3;
 use crate::DigestX;
 use crate::{
+    blake,
     cshake::{CSHAKE128, CSHAKE256},
     sha2, sha3, HashError,
 };
@@ -10,6 +11,7 @@ macro_rules! impl_hasher_type {
     ($NAME: ident, $([$ITEM: tt $(=$VAL: literal)?]),+) => {
         #[repr(u32)]
         #[derive(Copy, Clone, Eq, PartialEq)]
+        #[allow(non_camel_case_types)]
         pub enum $NAME {
             $($ITEM $(=$VAL)?,)+
         }
@@ -70,7 +72,15 @@ impl_hasher_type!(
     [SHAKE128 = 0x34],
     [SHAKE256 = 0x35],
     [CSHAKE128 = 0x36],
-    [CSHAKE256 = 0x37]
+    [CSHAKE256 = 0x37],
+    [BLAKE2B_128 = 0x40],
+    [BLAKE2B_224 = 0x41],
+    [BLAKE2B_256 = 0x42],
+    [BLAKE2B_384 = 0x43],
+    [BLAKE2B_512 = 0x44],
+    [BLAKE2S_128 = 0x45],
+    [BLAKE2S_224 = 0x46],
+    [BLAKE2S_256 = 0x47]
 );
 
 #[derive(Clone)]
@@ -156,6 +166,14 @@ impl HasherBuilder {
                     self.custom.as_ref().ok_or(HashError::Other("The CSHAKE function need to specify the custom information".to_string()))?,
                 )?)
             }
+            HasherType::BLAKE2B_128 => Box::new(blake::BLAKE2b128::new()),
+            HasherType::BLAKE2B_224 => Box::new(blake::BLAKE2b224::new()),
+            HasherType::BLAKE2B_256 => Box::new(blake::BLAKE2b256::new()),
+            HasherType::BLAKE2B_384 => Box::new(blake::BLAKE2b384::new()),
+            HasherType::BLAKE2B_512 => Box::new(blake::BLAKE2b512::new()),
+            HasherType::BLAKE2S_128 => Box::new(blake::BLAKE2s128::new()),
+            HasherType::BLAKE2S_224 => Box::new(blake::BLAKE2s224::new()),
+            HasherType::BLAKE2S_256 => Box::new(blake::BLAKE2s256::new()),
         };
 
         Ok(hasher)
