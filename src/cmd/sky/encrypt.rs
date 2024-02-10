@@ -145,10 +145,49 @@ impl SkyEncryptPara {
 
     pub fn build(mut self) -> Result<SkyEncrypt, String> {
         let hash = match self.hash_name.as_str() {
+            "sha2-224" => HasherBuilder::new(HasherType::SHA2_224)
+                .build()
+                .map_err(|e| format!("{e}")),
             "sha2-256" => HasherBuilder::new(HasherType::SHA2_256)
                 .build()
                 .map_err(|e| format!("{e}")),
+            "sha2-384" => HasherBuilder::new(HasherType::SHA2_384)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "sha2-512" => HasherBuilder::new(HasherType::SHA2_512)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "sha3-224" => HasherBuilder::new(HasherType::SHA3_224)
+                .build()
+                .map_err(|e| format!("{e}")),
             "sha3-256" => HasherBuilder::new(HasherType::SHA3_256)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "sha3-384" => HasherBuilder::new(HasherType::SHA3_384)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "sha3-512" => HasherBuilder::new(HasherType::SHA3_512)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2b-128" => HasherBuilder::new(HasherType::BLAKE2B_128)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2b-256" => HasherBuilder::new(HasherType::BLAKE2B_256)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2b-384" => HasherBuilder::new(HasherType::BLAKE2B_384)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2b-512" => HasherBuilder::new(HasherType::BLAKE2B_512)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2s-128" => HasherBuilder::new(HasherType::BLAKE2S_128)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2s-224" => HasherBuilder::new(HasherType::BLAKE2S_224)
+                .build()
+                .map_err(|e| format!("{e}")),
+            "blake2s-256" => HasherBuilder::new(HasherType::BLAKE2S_256)
                 .build()
                 .map_err(|e| format!("{e}")),
             _ => Err(format!(
