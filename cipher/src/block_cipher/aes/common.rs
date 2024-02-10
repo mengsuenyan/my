@@ -4,17 +4,6 @@ use utils::Block;
 use super::{AES, AES128, AES192, AES256};
 
 impl AES {
-    #[inline]
-    pub(super) const fn sub_word(w: u32) -> u32 {
-        let i = w.to_be_bytes();
-        u32::from_be_bytes([
-            AES::SBOX0[i[0] as usize],
-            AES::SBOX0[i[1] as usize],
-            AES::SBOX0[i[2] as usize],
-            AES::SBOX0[i[3] as usize],
-        ])
-    }
-
     pub fn new(key: &[u8]) -> Result<AES, CipherError> {
         match key.len() {
             AES128::KEY_SIZE => AES::aes128(key).map(AES::AES128),

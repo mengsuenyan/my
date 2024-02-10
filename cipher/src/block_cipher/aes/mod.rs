@@ -18,9 +18,33 @@ pub enum AES {
 }
 
 mod common;
+
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "aes"
+)))]
 mod const_;
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "aes"
+)))]
 mod generic;
+#[cfg(not(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "aes"
+)))]
 pub use generic::{AES128, AES192, AES256};
+
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "aes"
+))]
+mod amd64;
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "aes"
+))]
+pub use amd64::{AES128, AES192, AES256};
 
 #[cfg(test)]
 mod tests;
