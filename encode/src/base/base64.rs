@@ -79,10 +79,18 @@ impl Base64 {
         let mut olen = 0;
         for d in chunks.chunks_exact(4) {
             let c = [
-                table[d[0] as usize],
-                table[d[1] as usize],
-                table[d[2] as usize],
-                table[d[3] as usize],
+                table
+                    .get(d[0] as usize)
+                    .ok_or(EncodeError::InvalidBaseCodeInDec(d[0] as char))?,
+                table
+                    .get(d[1] as usize)
+                    .ok_or(EncodeError::InvalidBaseCodeInDec(d[1] as char))?,
+                table
+                    .get(d[2] as usize)
+                    .ok_or(EncodeError::InvalidBaseCodeInDec(d[2] as char))?,
+                table
+                    .get(d[3] as usize)
+                    .ok_or(EncodeError::InvalidBaseCodeInDec(d[3] as char))?,
             ];
 
             let x = [
