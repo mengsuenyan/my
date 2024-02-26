@@ -242,7 +242,7 @@ impl Cmd for BinCmd {
                     ))
                 } else {
                     Box::new(BufWriter::new(
-                        OpenOptions::new().write(true).append(true).open(x).unwrap(),
+                        OpenOptions::new().append(true).open(x).unwrap(),
                     ))
                 }
             }
