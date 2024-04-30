@@ -456,6 +456,13 @@ impl Cmd for GitCmd {
                     .value_parser(value_parser!(usize))
                     .help("to specify the max try times when git operation failed"),
             )
+            .arg(
+                Arg::new("notty-prompt")
+                .long("notty-prompt")
+                .action(ArgAction::SetFalse)
+                .required(false)
+                .help("If this Boolean environment variable is enabled, git will not prompt on the terminal")
+            )
             .subcommand(
                 Command::new("clone")
                     .about("git clone <TARGET> addrs")
@@ -557,6 +564,11 @@ impl Cmd for GitCmd {
 
     fn run(&self, m: &clap::ArgMatches) {
         let (mut path, mut pipe_str) = (Vec::new(), Vec::new());
+
+        if !m.get_flag("notty-prompt") {
+            std::env::set_var("GIT_TERMINAL_PROMPT", "false");
+            log::info!("set GIT_TERMINAL_PROMPT=false");
+        }
 
         if m.get_flag("pipe") {
             std::io::stdin().lines().for_each(|line| match line {

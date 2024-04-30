@@ -12,7 +12,7 @@ fn main() {
         .parse_default_env()
         .init();
 
-    let version = env!("MY_VERSION_INFO");
+    let version = concat!(env!("MY_VERSION_INFO"), " (", env!("MY_GIT_INFO"), ")");
     let app = Command::new("my")
         .version(version)
         .about("my resource management")
