@@ -320,9 +320,7 @@ impl SkyCmd {
         sky: &mut SkyEncrypt,
         data: &mut Vec<u8>,
     ) -> Option<String> {
-        let Some(filename) = Self::read_file(p, data) else {
-            return None;
-        };
+        let filename = Self::read_file(p, data)?;
 
         let Ok(existed_data) = std::fs::read(out_path) else {
             return Some(filename);
