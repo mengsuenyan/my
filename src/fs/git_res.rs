@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
     str::FromStr,
@@ -173,6 +174,12 @@ impl GitRes {
         self.info.push(info.clone());
     }
 
+    pub fn append_git_infos(&mut self, info: &[GitInfo]) {
+        for x in info {
+            self.add_git_info(x);
+        }
+    }
+
     pub fn iter(&self) -> GitResIter<'_, GitInfo> {
         GitResIter {
             iter: self.info.iter(),
@@ -226,39 +233,43 @@ impl GitRes {
     }
 
     /// 去掉重复的条目, 以仓库url为id键值
-    pub fn reduce(&mut self) {
-        let (mut res, mut dup) = (
-            Vec::with_capacity(self.info.len()),
-            Vec::with_capacity(self.info.len() >> 1),
-        );
-        for item in self.info.iter() {
-            if !res.iter().any(|x: &GitInfo| x.url == item.url) {
-                res.push(item.clone());
-            } else {
-                dup.push(item.clone());
+    pub fn reduce(&mut self, is_check: bool) {
+        let mut res = HashMap::with_capacity(256);
+        for item in self.iter() {
+            res.entry(item.url.clone())
+                .or_insert(Vec::with_capacity(1))
+                .push(item.clone());
+        }
+
+        let mut dup = res
+            .iter_mut()
+            .filter(|(k, v)| k.is_none() || v.len() > 1)
+            .collect::<HashMap<_, _>>();
+
+        let mut res = Vec::new();
+        res.append(&mut self.info);
+        for info in res {
+            if let Some(x) = dup.get_mut(&info.url) {
+                if let Some(idx) = x.iter().enumerate().find(|x| x.1.path() == info.path()) {
+                    if !info.path().exists() {
+                        x.swap_remove(idx.0);
+                        continue;
+                    }
+                }
+            }
+
+            if !is_check || info.path().exists() {
+                self.info.push(info);
             }
         }
 
-        for item in res.iter() {
-            if dup.iter().any(|x| x.url == item.url) {
-                dup.push(item.clone());
+        let mut show = GitRes::new();
+        for (_, v) in dup {
+            if v.len() > 1 {
+                show.append_git_infos(v.as_slice());
             }
         }
-
-        // 结合shell其它命令删除重复的仓库
-        dup.sort_by(|x, y| {
-            x.url
-                .partial_cmp(&y.url)
-                .unwrap_or(std::cmp::Ordering::Less)
-        });
-        println!("{}", GitRes::from(dup.iter()));
-
-        self.info.clear();
-        for item in res {
-            if item.path().exists() {
-                self.info.push(item);
-            }
-        }
+        println!("{}", show);
     }
 
     /// 解析my.nu nullshell脚本生成的资源文件
