@@ -228,8 +228,7 @@ impl GitCmd {
         let mut git_res = self.res_cmd(path, level);
         let mut infos = VecDeque::from(git_res.to_vec());
         let update_config_per_items = std::env::var("MY_GIT_UPDATE_ITEMS")
-            .unwrap_or("1".to_string())
-            .parse::<usize>()
+            .map(|x| x.parse::<usize>().unwrap_or(10))
             .unwrap_or(10);
 
         git_res.clear();
@@ -366,9 +365,9 @@ impl GitCmd {
         self.delete(from);
     }
 
-    fn reduce(&self) {
+    fn reduce(&self, is_check: bool) {
         let mut res = self.open_res_file();
-        res.reduce();
+        res.reduce(is_check);
         self.write_res_file(&res);
     }
 
@@ -541,7 +540,13 @@ impl Cmd for GitCmd {
             )
             .subcommand(Command::new("open").about("open git resource file"))
             .subcommand(
-                Command::new("reduce").about("remove duplicate entries in the git resource file"),
+                Command::new("reduce").about("remove invalid entries in the git resource file").arg(
+                    Arg::new("check")
+                    .long("check")
+                    .action(ArgAction::SetTrue)
+                    .required(false)
+                    .help("check the repo whether is exsit")
+                ),
             )
             .subcommand(
                 Command::new("temp")
@@ -673,8 +678,9 @@ impl Cmd for GitCmd {
             Some(("open", _m)) => {
                 println!("{}", self.open_res_file());
             }
-            Some(("reduce", _m)) => {
-                self.reduce();
+            Some(("reduce", m)) => {
+                let is_check = m.get_flag("check");
+                self.reduce(is_check);
             }
             Some(("temp", m)) => {
                 println!("{}", self.temp_cmd(m));

@@ -181,4 +181,4 @@
 
 == 环境变量
 
-- `MY_GIT_UPDATE_ITEMS`: 设置`my git --update`每更新成功多个仓库之后, 更新配置文件.
+- `MY_GIT_UPDATE_ITEMS`: 设置`my git --update`每更新成功多个仓库之后, 更新配置文件. 默认是10.
