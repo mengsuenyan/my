@@ -227,10 +227,18 @@ impl GitCmd {
     fn update_cmd(&self, path: &[PathBuf], level: usize, max_try: usize) -> GitRes {
         let mut git_res = self.res_cmd(path, level);
         let mut infos = VecDeque::from(git_res.to_vec());
+        let update_config_per_items = std::env::var("MY_GIT_UPDATE_ITEMS")
+            .unwrap_or("1".to_string())
+            .parse::<usize>()
+            .unwrap_or(10);
 
         git_res.clear();
         let mut cnt = 0;
         while let Some(rep) = infos.pop_back() {
+            if git_res.git_info_nums() >= update_config_per_items {
+                self.update_res_file(&git_res);
+                git_res.clear();
+            }
             cnt += 1;
             let path = rep.path().to_path_buf();
             let _guard = WorkingdirGuard::new(&self.cur_dir, path.as_path());
@@ -618,8 +626,6 @@ impl Cmd for GitCmd {
         let max_try = m.get_one::<usize>("max-try").copied().unwrap_or(1);
         if let Some(lvl) = m.get_one::<usize>("update").copied() {
             let r = self.update_cmd(&path, lvl, max_try);
-            println!("{}", r);
-            println!("The above repositories update success.");
             self.update_res_file(&r);
         }
 

@@ -217,19 +217,46 @@ impl GitRes {
         self.info.clone()
     }
 
+    pub fn git_info_nums(&self) -> usize {
+        self.info.len()
+    }
+
     pub fn clear(&mut self) {
         self.info.clear();
     }
 
-    /// 去掉重复的条目, 以仓库路径为id键值
+    /// 去掉重复的条目, 以仓库url为id键值
     pub fn reduce(&mut self) {
-        let res = self.info.clone();
-        self.clear();
-        for item in res {
-            if !self.info.iter().any(|info| info.path() == item.path()) {
-                self.info.push(item);
+        let (mut res, mut dup) = (
+            Vec::with_capacity(self.info.len()),
+            Vec::with_capacity(self.info.len() >> 1),
+        );
+        for item in self.info.iter() {
+            if !res.iter().any(|x: &GitInfo| x.url == item.url) {
+                res.push(item.clone());
             } else {
-                log::info!("remove duplicate item\n{}", item)
+                dup.push(item.clone());
+            }
+        }
+
+        for item in res.iter() {
+            if dup.iter().any(|x| x.url == item.url) {
+                dup.push(item.clone());
+            }
+        }
+
+        // 结合shell其它命令删除重复的仓库
+        dup.sort_by(|x, y| {
+            x.url
+                .partial_cmp(&y.url)
+                .unwrap_or(std::cmp::Ordering::Less)
+        });
+        println!("{}", GitRes::from(dup.iter()));
+
+        self.info.clear();
+        for item in res {
+            if item.path().exists() {
+                self.info.push(item);
             }
         }
     }
