@@ -9,17 +9,12 @@ use std::time::Duration;
 use url::Url;
 
 use crate::fs::{GitInfo, GitRes, ResourceInfo};
-use crate::{cmd::WorkingdirGuard, error::MyError};
+use crate::{
+    cmd::{Cmd, WorkingdirGuard},
+    error::MyError,
+};
 
-use super::Cmd;
-
-pub struct GitCmd {
-    cur_dir: PathBuf,
-    // 每次clone, update后的暂停的最大时间
-    sleep: Cell<u64>,
-    config_path: PathBuf,
-    config_backup_path: PathBuf,
-}
+use super::GitCmd;
 
 impl GitCmd {
     pub fn new() -> Result<Self, MyError> {
@@ -84,12 +79,12 @@ impl GitCmd {
         }
     }
 
-    fn sleep(&self) {
+    pub(super) fn sleep(&self) {
         let s = rand::random::<u64>() % self.sleep.get();
         std::thread::sleep(Duration::from_secs(s));
     }
 
-    fn git(cmd: &mut StdCommand) -> Result<String, MyError> {
+    pub(super) fn git(cmd: &mut StdCommand) -> Result<String, MyError> {
         let output = cmd.output().unwrap();
 
         if !output.status.success() {
@@ -117,7 +112,7 @@ impl GitCmd {
         git_res
     }
 
-    fn res_cmd(&self, path: &[PathBuf], level: usize) -> GitRes {
+    pub(super) fn res_cmd(&self, path: &[PathBuf], level: usize) -> GitRes {
         let mut git_res = GitRes::new();
 
         for path in path.iter() {
@@ -222,53 +217,6 @@ impl GitCmd {
             "addr {s} not found in the `{}`",
             path.display()
         )))
-    }
-
-    fn update_cmd(&self, path: &[PathBuf], level: usize, max_try: usize) -> GitRes {
-        let mut git_res = self.res_cmd(path, level);
-        let mut infos = VecDeque::from(git_res.to_vec());
-        let update_config_per_items = std::env::var("MY_GIT_UPDATE_ITEMS")
-            .map(|x| x.parse::<usize>().unwrap_or(10))
-            .unwrap_or(10);
-
-        git_res.clear();
-        let mut cnt = 0;
-        while let Some(rep) = infos.pop_back() {
-            if git_res.git_info_nums() >= update_config_per_items {
-                self.update_res_file(&git_res);
-                git_res.clear();
-            }
-            cnt += 1;
-            let path = rep.path().to_path_buf();
-            let _guard = WorkingdirGuard::new(&self.cur_dir, path.as_path());
-            log::info!("{}", rep);
-            match Self::git(StdCommand::new("git").args(["fetch", "origin"])) {
-                Ok(s) => {
-                    git_res.add_git_info(&rep);
-                    log::info!("Ok. {} remaning `{}` repository to update", s, infos.len());
-                    cnt = 0;
-                }
-                Err(e) => {
-                    log::error!("{e}\nremaning `{} repository to update", infos.len() + 1);
-                    if cnt < max_try {
-                        infos.push_front(rep)
-                    } else {
-                        log::warn!(
-                            "{} update trying times exceed {}",
-                            rep.path().display(),
-                            max_try
-                        );
-                        cnt = 0;
-                    }
-                }
-            }
-
-            if !infos.is_empty() {
-                self.sleep();
-            }
-        }
-
-        git_res
     }
 
     fn clone_cmd(&self, target_dir: PathBuf, urls: Vec<Url>, max_try: usize) -> GitRes {
@@ -442,7 +390,7 @@ impl Cmd for GitCmd {
                     .value_parser(value_parser!(usize))
                     .required(false)
                     .conflicts_with_all(["addr", "update"])
-                    .help("search git repositories with specified levle"),
+                    .help("search git repositories with specified level"),
             )
             .arg(
                 Arg::new("update")
@@ -452,7 +400,7 @@ impl Cmd for GitCmd {
                     .required(false)
                     .value_parser(value_parser!(usize))
                     .conflicts_with_all(["addr", "res"])
-                    .help("search git repositories with specified levle"),
+                    .help("search git repositories with specified level"),
             )
             .arg(
                 Arg::new("max-try")
