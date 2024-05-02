@@ -62,6 +62,10 @@ impl GitInfo {
         &self.name
     }
 
+    pub fn url(&self) -> Option<&str> {
+        self.url.as_deref()
+    }
+
     pub fn set_url(mut self, url: &str) -> Self {
         self.url = Some(url.to_string());
         self

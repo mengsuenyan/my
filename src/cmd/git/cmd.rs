@@ -2,11 +2,9 @@ use chrono::{DateTime, Utc};
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use regex::Regex;
 use std::cell::Cell;
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use std::time::Duration;
-use url::Url;
 
 use crate::fs::{GitInfo, GitRes, ResourceInfo};
 use crate::{
@@ -14,6 +12,7 @@ use crate::{
     error::MyError,
 };
 
+use super::clone::CloneCmd;
 use super::GitCmd;
 
 impl GitCmd {
@@ -168,7 +167,7 @@ impl GitCmd {
     }
 
     /// git remote -v获取仓库地址
-    fn remote(&self, path: &Path, is_only_url: bool) -> Result<GitInfo, MyError> {
+    pub(super) fn remote(&self, path: &Path, is_only_url: bool) -> Result<GitInfo, MyError> {
         let _guard = WorkingdirGuard::new(&self.cur_dir, path);
         let s = Self::git(StdCommand::new("git").args(["remote", "-v"]))?;
         let git_info = GitInfo::new(path);
@@ -217,56 +216,6 @@ impl GitCmd {
             "addr {s} not found in the `{}`",
             path.display()
         )))
-    }
-
-    fn clone_cmd(&self, target_dir: PathBuf, urls: Vec<Url>, max_try: usize) -> GitRes {
-        let target_dir = target_dir.canonicalize().unwrap();
-        let (mut git_res, mut urls, mut cnt) = (GitRes::new(), VecDeque::from(urls), 0);
-
-        while let Some(url) = urls.pop_back() {
-            let _guard = WorkingdirGuard::new(&self.cur_dir, target_dir.as_path());
-
-            cnt += 1;
-            log::info!("git clone {} into `{}`", url, target_dir.display());
-            match Self::git(StdCommand::new("git").arg("clone").arg(url.as_str())) {
-                Ok(s) => {
-                    cnt = 0;
-                    log::info!("Ok. {s}");
-                    if let Some(Some(p)) = url.path_segments().map(|p| p.last()) {
-                        let path = target_dir.join(p.trim_end_matches(".git"));
-                        match self.remote(&path, false) {
-                            Ok(info) => git_res.add_git_info(&info),
-                            Err(e) => {
-                                log::error!("{e}");
-                            }
-                        }
-                    } else {
-                        log::warn!("cannot get basename from `{}`", url);
-                    }
-                }
-                Err(e) => {
-                    let e_str = format!("{e}");
-                    if e_str.contains("already exists") {
-                        log::warn!("{e}");
-                        cnt = 0;
-                    } else {
-                        log::error!("{e_str}");
-                        if cnt < max_try {
-                            urls.push_front(url);
-                        } else {
-                            log::warn!("{} clone trying times exceed {}", url, max_try);
-                            cnt = 0;
-                        }
-                    }
-                }
-            }
-
-            if !urls.is_empty() {
-                self.sleep();
-            }
-        }
-
-        git_res
     }
 
     fn delete(&self, path: &Path) {
@@ -419,28 +368,7 @@ impl Cmd for GitCmd {
                 .help("If this Boolean environment variable is enabled, git will not prompt on the terminal")
             )
             .subcommand(
-                Command::new("clone")
-                    .about("git clone <TARGET> addrs")
-                    .arg(
-                        Arg::new("dir")
-                            .value_name("TARGET DIR")
-                            .long("dir")
-                            .short('d')
-                            .action(ArgAction::Set)
-                            .required(false)
-                            .value_parser(value_parser!(PathBuf))
-                            .help(
-                                "to specify the clone addr, default is current working directory",
-                            ),
-                    )
-                    .arg(
-                        Arg::new("addr")
-                            .value_name("ADDRs")
-                            .action(ArgAction::Append)
-                            .required(true)
-                            .value_parser(value_parser!(String))
-                            .help("git repository address"),
-                    ),
+                CloneCmd::cmd()
             )
             .subcommand(
                 Command::new("cp")
@@ -583,33 +511,7 @@ impl Cmd for GitCmd {
         }
 
         match m.subcommand() {
-            Some(("clone", m)) => {
-                let target_dir = m
-                    .get_one::<PathBuf>("dir")
-                    .cloned()
-                    .unwrap_or_else(|| self.cur_dir.clone());
-
-                let mut url_str = pipe_str.clone();
-                if let Some(url) = m.get_many::<String>("addr") {
-                    url.for_each(|url| url_str.push(url.clone()));
-                }
-
-                let mut urls = vec![];
-                for s in url_str.iter() {
-                    match Url::parse(s.as_str()) {
-                        Ok(url) => {
-                            urls.push(url);
-                        }
-                        Err(e) => {
-                            log::error!("`{}` parse as url failed, {e}", s);
-                        }
-                    }
-                }
-
-                let r = self.clone_cmd(target_dir, urls, max_try);
-                println!("{}", r);
-                self.update_res_file(&r);
-            }
+            Some((CloneCmd::NAME, m)) => CloneCmd::new(self, pipe_str, max_try).run(m),
             Some(("cp", m)) => {
                 let from = m.get_one::<PathBuf>("from").unwrap();
                 let to = m.get_one::<PathBuf>("to").unwrap();
