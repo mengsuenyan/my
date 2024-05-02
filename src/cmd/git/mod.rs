@@ -11,3 +11,5 @@ pub struct GitCmd {
 mod cmd;
 
 mod update;
+
+mod clone;
