@@ -155,14 +155,15 @@ impl<'a> Cmd for CloneCmd<'a> {
                 }
             } else {
                 let infos = self.find_reps(s.as_str());
-                for info in infos {
-                    if !info.path().exists() {
-                        if let Some(url) = parse(s.as_str()) {
-                            urls.push(url);
-                        }
-                    } else {
-                        log::info!("{s} have existed in the {:?}", info.path());
+                if !infos.iter().any(|x| x.path().exists()) {
+                    if let Some(url) = parse(s.as_str()) {
+                        urls.push(url);
                     }
+                } else {
+                    log::info!(
+                        "{s} have existed in the one of {:?}",
+                        infos.iter().map(|x| x.path()).collect::<Vec<_>>()
+                    );
                 }
             }
         }
