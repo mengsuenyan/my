@@ -1,83 +1,43 @@
-use crate::cmd::Cmd;
-use clap::{ArgMatches, Command};
-use std::str::FromStr;
+use clap::{Args, Subcommand};
 
-mod hex;
-use hex::HexCmd;
+use self::{
+    base::{Base16Args, Base32Args, Base64Args},
+    digit::{BinArgs, HexArgs},
+};
 
-mod bin;
-use bin::BinCmd;
+pub mod base;
+pub mod digit;
 
-mod byte;
-use byte::ByteCmd;
-
-mod base;
-use base::{Base16Cmd, Base32Cmd, Base58Cmd, Base64Cmd};
-
-#[derive(Copy, Clone, Eq, PartialEq, Default)]
-pub enum SType {
-    #[default]
-    Str,
-    Int,
-    F32,
-    F64,
-}
-
-impl FromStr for SType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "str" => Ok(Self::Str),
-            "int" => Ok(Self::Int),
-            "f32" => Ok(Self::F32),
-            "f64" => Ok(Self::F64),
-            _ => Err(format!("{s} is not valid type")),
-        }
-    }
-}
-
-#[derive(Clone)]
+#[derive(Args)]
+#[command(name = "enc")]
+#[command(about = "data encode/decode command")]
 pub struct EncCmd {
-    pipe_data: Vec<u8>,
+    #[command(subcommand)]
+    enc: EncSubCmd,
+}
+
+#[derive(Subcommand)]
+pub enum EncSubCmd {
+    #[command(name = "b16", alias = "base16")]
+    Base16(Base16Args),
+    #[command(name = "b32", alias = "base32")]
+    Base32(Base32Args),
+    #[command(name = "b64", alias = "base64")]
+    Base64(Base64Args),
+    #[command(name = "hex")]
+    Hex(HexArgs),
+    #[command(name = "bin")]
+    Bin(BinArgs),
 }
 
 impl EncCmd {
-    pub fn new(pipe_data: &[u8]) -> Self {
-        Self {
-            pipe_data: pipe_data.to_vec(),
-        }
-    }
-}
-
-impl Cmd for EncCmd {
-    const NAME: &'static str = "enc";
-
-    fn cmd() -> Command {
-        Command::new(Self::NAME)
-            .about("Encode")
-            .subcommand(HexCmd::cmd())
-            .subcommand(BinCmd::cmd())
-            .subcommand(ByteCmd::cmd())
-            .subcommand(Base16Cmd::cmd())
-            .subcommand(Base32Cmd::cmd())
-            .subcommand(Base58Cmd::cmd())
-            .subcommand(Base64Cmd::cmd())
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        match m.subcommand() {
-            Some((HexCmd::NAME, m)) => HexCmd::new(self.pipe_data.as_slice()).run(m),
-            Some((BinCmd::NAME, m)) => BinCmd::new(self.pipe_data.as_slice()).run(m),
-            Some((ByteCmd::NAME, m)) => ByteCmd::new(self.pipe_data.as_slice()).run(m),
-            Some((Base16Cmd::NAME, m)) => Base16Cmd::new(self.pipe_data.as_slice()).run(m),
-            Some((Base32Cmd::NAME, m)) => Base32Cmd::new(self.pipe_data.as_slice()).run(m),
-            Some((Base58Cmd::NAME, m)) => Base58Cmd::new(self.pipe_data.as_slice()).run(m),
-            Some((Base64Cmd::NAME, m)) => Base64Cmd::new(self.pipe_data.as_slice()).run(m),
-            Some((name, _)) => {
-                unimplemented!("Unsupport encode command `{}`", name)
-            }
-            None => {}
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        match self.enc {
+            EncSubCmd::Base16(a) => a.exe(pipe),
+            EncSubCmd::Base32(a) => a.exe(pipe),
+            EncSubCmd::Base64(a) => a.exe(pipe),
+            EncSubCmd::Hex(a) => a.exe(pipe),
+            EncSubCmd::Bin(a) => a.exe(pipe),
         }
     }
 }

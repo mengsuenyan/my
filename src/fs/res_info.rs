@@ -317,7 +317,7 @@ impl Resources {
         self.res.len()
     }
 
-    pub(crate) fn res_info(&self) -> &[Rc<ResourceInfo>] {
+    pub fn res_info(&self) -> &[Rc<ResourceInfo>] {
         self.res.as_slice()
     }
 }

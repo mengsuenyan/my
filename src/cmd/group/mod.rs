@@ -1,25 +1,23 @@
-use clap::Command;
+pub mod fp;
 
-use super::Cmd;
+use clap::{Args, Subcommand};
 
-mod fp;
-pub use fp::FpCmd;
+#[derive(Args)]
+#[command(about = "group theory")]
+pub struct GroupArgs {
+    #[command(subcommand)]
+    g: GroupSubArgs,
+}
 
-#[derive(Clone)]
-pub struct GroupCmd;
+#[derive(Subcommand)]
+pub enum GroupSubArgs {
+    Fp(fp::FpArgs),
+}
 
-impl Cmd for GroupCmd {
-    const NAME: &'static str = "g";
-    fn cmd() -> clap::Command {
-        Command::new(Self::NAME)
-            .about("group")
-            .subcommand_required(true)
-            .subcommand(FpCmd::cmd())
-    }
-    fn run(&self, m: &clap::ArgMatches) {
-        match m.subcommand() {
-            Some((FpCmd::NAME, m)) => FpCmd.run(m),
-            _ => unreachable!(),
+impl GroupArgs {
+    pub fn exe(self, _: Option<&[u8]>) {
+        match self.g {
+            GroupSubArgs::Fp(a) => a.exe(),
         }
     }
 }

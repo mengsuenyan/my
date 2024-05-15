@@ -5,6 +5,12 @@ macro_rules! blake2_para {
             pub block: [u8; $BYTES],
         }
 
+        impl Default for $NAME {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
         impl $NAME {
             const fn new_inner() -> Self {
                 Self {

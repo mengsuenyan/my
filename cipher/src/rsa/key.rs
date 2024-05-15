@@ -456,7 +456,7 @@ impl PrecomputedValues {
 
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{n={:#x}, e={:#x}}}", self.n, self.e)
+        write!(f, "{{\"n\":\"{:#x}\", \"e\":\"{:#x}\"}}", self.n, self.e)
     }
 }
 
@@ -468,10 +468,14 @@ impl Display for PrimeFactor {
             if i != 0 {
                 s.push(',');
             }
-            s.push_str(format!("{:#x}", r).as_str());
+            s.push_str(format!("\"{:#x}\"", r).as_str());
         }
         s.push(']');
-        write!(f, "{{p:{:#x}, q:{:#x}, r: {}}}", self.p, self.q, s)
+        write!(
+            f,
+            "{{\"p\":\"{:#x}\", \"q\":\"{:#x}\", \"r\": {}}}",
+            self.p, self.q, s
+        )
     }
 }
 
@@ -481,12 +485,16 @@ impl Display for PrivateKey {
             Some(factor) => {
                 write!(
                     f,
-                    "{{pk: {}, d: {:#x}, factor: {}}}",
+                    "{{\"pk\": {}, \"d\": \"{:#x}\", \"factor\": {}}}",
                     self.pk, self.d, factor
                 )
             }
             None => {
-                write!(f, "{{pk: {}, d: {:#x}, factor: []}}", self.pk, self.d)
+                write!(
+                    f,
+                    "{{\"pk\": {}, \"d\": {:#x}, \"factor\": []}}",
+                    self.pk, self.d
+                )
             }
         }
     }

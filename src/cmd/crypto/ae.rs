@@ -1,234 +1,360 @@
-use super::mode;
-use crate::cmd::Cmd;
-use anyhow::Result;
+use crate::cmd::args::{IVArgs, IVector, Key, Salt, SaltArgs};
+use crate::cmd::config::MyConfig;
+use crate::cmd::crypto::block::BlockCipherType;
+use crate::cmd::crypto::header::Header;
+use crate::cmd::crypto::CryptoCommonArgs;
+use crate::cmd::info::Info;
+use crate::cmd::kdf::KDFSubArgs;
+use crate::log_error;
 use cipher::ae::{AuthenticationCipherX, CCM, GCM};
-use clap::{value_parser, Arg, ArgAction};
-use std::fs::read;
-use std::{path::PathBuf, thread::scope};
+use clap::{
+    builder::{PossibleValuesParser, TypedValueParser},
+    Args,
+};
+use std::thread;
 
-#[derive(Clone)]
-pub struct CCMCmd;
-#[derive(Clone)]
-pub struct GCMCmd;
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args))]
+#[command(mut_group("salt", |g| g.id("nonce")))]
+#[command(mut_arg("sfile", |a| a.long("nfile").value_name("NFILE").help("the nonce file path")))]
+#[command(mut_arg("sstr", |a| a.long("nstr").value_name("NSTR").help("the nonce string")))]
+#[command(mut_group("iv", |g| g.id("adata").required(false)))]
+#[command(mut_arg("ivfile", |a| a.long("afile").value_name("AFILE").help("the associated data file path")))]
+#[command(mut_arg("ivstr", |a| a.long("astr").value_name("ASTR").help("the associated data string")))]
+#[command(
+    about = "The Counter with Cipher Block Chaining-Message Authentication Code(NIST SP 800-38C)"
+)]
+pub struct CCMArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
 
-impl Cmd for CCMCmd {
-    const NAME: &'static str = "ccm";
-    fn cmd() -> clap::Command {
-        mode::common_command(Self::NAME)
-            .about("Counter with Cipher Block Chaining-Message Authentication Code")
-            .arg(
-                Arg::new("mac")
-                    .help("mac size")
-                    .long("mac")
-                    .default_value("16")
-                    .action(ArgAction::Set)
-                    .value_parser(["4", "6", "8", "10", "12", "14", "16"])
-                    .required(false),
-            )
-            .arg(
-                Arg::new("nonce")
-                    .help("nonce size need in the [7,13]")
-                    .long("nonce")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(true),
-            )
-            .arg(
-                Arg::new("ad")
-                    .help("associated data")
-                    .long("ad")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(true),
-            )
+    #[arg(name = "type", short, long, default_value = "aes128")]
+    pub r#type: BlockCipherType,
+
+    #[arg(long="msize", value_parser = PossibleValuesParser::new(["4", "6", "8", "10", "12", "14", "16"]).map(|x| x.parse::<u8>().unwrap()))]
+    #[arg(
+        default_value = "16",
+        value_name = "MAC-SIZE",
+        help = "MAC size in byte"
+    )]
+    pub mac_size: u8,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    nonce: SaltArgs,
+
+    #[command(flatten)]
+    adata: IVArgs,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args))]
+#[command(mut_group("salt", |g| g.id("nonce")))]
+#[command(mut_arg("sfile", |a| a.long("nfile").value_name("NFILE").help("the nonce file path")))]
+#[command(mut_arg("sstr", |a| a.long("nstr").value_name("NSTR").help("the nonce string")))]
+#[command(mut_group("iv", |g| g.id("adata").required(false)))]
+#[command(mut_arg("ivfile", |a| a.long("afile").value_name("AFILE").help("the associated data file path")))]
+#[command(mut_arg("ivstr", |a| a.long("astr").value_name("ASTR").help("the associated data string")))]
+#[command(about = "The Galois/Counter Mode(GCM) and GMAC(NIST SP 800-38D)")]
+pub struct GCMArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name = "type", short, long, default_value = "aes128")]
+    pub r#type: BlockCipherType,
+
+    #[arg(long="msize", value_parser = clap::value_parser!(u8).range(0..=16))]
+    #[arg(
+        default_value = "16",
+        value_name = "MAC-SIZE",
+        help = "MAC size in byte"
+    )]
+    pub mac_size: u8,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    nonce: SaltArgs,
+
+    #[command(flatten)]
+    adata: IVArgs,
+}
+
+impl CCMArgs {
+    pub fn generate_key(&self, header: &Header) -> anyhow::Result<Key> {
+        let mut kdf = self.kdf.clone();
+        kdf.append_key(Key::from(header.digest()))?;
+        kdf.append_key(Key::from(self.mac_size.to_be_bytes().to_vec()))?;
+        if self.nonce.is_specified() {
+            kdf.append_salt(Salt::try_from(&self.nonce)?)?;
+        }
+
+        if self.adata.is_specified() {
+            kdf.append_salt(IVector::try_from(&self.adata)?)?
+        }
+
+        kdf.set_ksize(self.r#type.key_size());
+        kdf.run()
     }
 
-    fn run(&self, m: &clap::ArgMatches) {
-        let (bc, bm) = mode::common_run(Self::NAME, m).unwrap();
-        let (mac, nonce, ad, ipaths, opaths, msg, is_decrypt) = (
-            m.get_one::<String>("mac")
-                .map(|x| x.parse::<usize>().unwrap())
-                .unwrap(),
-            m.get_one::<PathBuf>("nonce").unwrap(),
-            m.get_one::<PathBuf>("ad").unwrap(),
-            bm.get_many::<PathBuf>("file")
-                .map(|x| x.cloned().collect::<Vec<_>>())
-                .unwrap_or_default(),
-            bm.get_many::<PathBuf>("output")
-                .map(|x| x.cloned().collect::<Vec<_>>())
-                .unwrap_or_default(),
-            bm.get_one::<String>("msg").cloned().unwrap_or_default(),
-            bm.get_flag("decrypt"),
-        );
+    pub fn ccm_cipher(
+        &self,
+        key: Key,
+    ) -> anyhow::Result<Box<dyn AuthenticationCipherX + Send + Sync + 'static>> {
+        let block_cipher = self.r#type.block_cipher(key)?;
+        Ok(Box::new(CCM::new(block_cipher, self.mac_size as usize)?))
+    }
 
-        assert_eq!(
-            ipaths.len(),
-            opaths.len(),
-            "the file path numbers must equal to output path numbers"
-        );
-
-        let mut ccm = Vec::with_capacity(bc.len());
-        for x in bc {
-            ccm.push(CCM::new(x, mac).unwrap())
-        }
-
-        let (nonce, ad) = (read(nonce).unwrap(), read(ad).unwrap());
-        let (nonce, ad) = (nonce.as_slice(), ad.as_slice());
-        if !msg.is_empty() {
-            let ccm = ccm.pop().unwrap();
-            let (msg, mut buf) = (msg.as_bytes(), Vec::with_capacity(msg.len() + 128));
-            if is_decrypt {
-                ccm.auth_decrypt_x(nonce, ad, msg, &mut buf).unwrap();
-            } else {
-                ccm.auth_encrypt_x(nonce, ad, msg, &mut buf).unwrap();
-            }
-            for x in buf {
-                print!("{:02x}", x);
-            }
-            println!()
-        }
-
-        if ccm.len() < 2 {
-            for (c, (ipath, opath)) in ccm.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                let data = std::fs::read(ipath).unwrap();
-                let (data, mut buf) = (data.as_slice(), Vec::with_capacity(data.len() + 128));
-                if is_decrypt {
-                    c.auth_decrypt_x(nonce, ad, data, &mut buf).unwrap();
-                } else {
-                    c.auth_encrypt_x(nonce, ad, data, &mut buf).unwrap();
-                }
-                std::fs::write(opath, data).unwrap();
-            }
+    pub fn run(
+        cipher: Box<dyn AuthenticationCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        nonce: &[u8],
+        associated_data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut res = MyConfig::tmp_buf();
+        if is_decrypt {
+            cipher.auth_decrypt_x(nonce, associated_data, data, &mut res)?;
         } else {
-            let x = scope::<'_, _, Result<()>>(move |s| {
-                for (c, (ipath, opath)) in ccm.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                    s.spawn::<_, Result<()>>(move || {
-                        let data = std::fs::read(ipath)?;
-                        let (data, mut buf) =
-                            (data.as_slice(), Vec::with_capacity(data.len() + 128));
-                        if is_decrypt {
-                            c.auth_decrypt_x(nonce, ad, data, &mut buf)?;
-                        } else {
-                            c.auth_encrypt_x(nonce, ad, data, &mut buf)?;
-                        }
-                        std::fs::write(opath, data)?;
-                        Ok(())
-                    });
-                }
-                Ok(())
-            });
-
-            x.unwrap();
+            cipher.auth_encrypt_x(nonce, associated_data, data, &mut res)?;
         }
+
+        Ok(res)
+    }
+
+    fn cipher_data(&self, data: &[u8], nonce: &[u8], associated_data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let key = self.generate_key(&header)?;
+
+        let cipher = self.ccm_cipher(key)?;
+        let data = Self::run(cipher, data, nonce, associated_data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        let nonce = Salt::try_from(&self.nonce).unwrap().to_bytes();
+        let adata = if self.adata.is_specified() {
+            IVector::try_from(&self.adata).unwrap().to_bytes()
+        } else {
+            Vec::new()
+        };
+        let (nonce, adata) = (nonce.as_slice(), adata.as_slice());
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe, nonce, adata).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes(), nonce, adata).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run(nonce, adata);
+    }
+
+    fn multiple_thread_to_run(&self, nonce: &[u8], associated_data: &[u8]) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+
+        let header_info = header_info.as_str();
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(self.common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !self.common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some(key) = log_error(self.generate_key(&header)) else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(self.ccm_cipher(key)) else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(
+                            cipher,
+                            &data,
+                            nonce,
+                            associated_data,
+                            self.common.decrypt,
+                        )) else {
+                            continue;
+                        };
+
+                        log_error(self.common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
     }
 }
 
-impl Cmd for GCMCmd {
-    const NAME: &'static str = "gcm";
-    fn cmd() -> clap::Command {
-        mode::common_command(Self::NAME)
-            .about("Galois/Counter Mode(GCM) and GMAC")
-            .arg(
-                Arg::new("mac")
-                    .help("mac size")
-                    .long("mac")
-                    .default_value("16")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(u64).range(0..=16))
-                    .required(false),
-            )
-            .arg(
-                Arg::new("nonce")
-                    .help("nonce need not empty")
-                    .long("nonce")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(true),
-            )
-            .arg(
-                Arg::new("ad")
-                    .help("associated data")
-                    .long("ad")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(true),
-            )
+impl GCMArgs {
+    pub fn generate_key(&self, header: &Header) -> anyhow::Result<Key> {
+        let mut kdf = self.kdf.clone();
+        kdf.append_key(Key::from(
+            (self.mac_size as u32)
+                .rotate_right(header.digest()[0] as u32)
+                .to_be_bytes()
+                .to_vec(),
+        ))?;
+        kdf.append_key(Key::from(header.digest()))?;
+        if self.nonce.is_specified() {
+            kdf.append_salt(Salt::try_from(&self.nonce)?)?;
+        }
+
+        if self.adata.is_specified() {
+            kdf.append_salt(IVector::try_from(&self.adata)?)?
+        }
+
+        kdf.set_ksize(self.r#type.key_size());
+        kdf.run()
     }
 
-    fn run(&self, m: &clap::ArgMatches) {
-        let (bc, bm) = mode::common_run(Self::NAME, m).unwrap();
-        let (mac, nonce, ad, ipaths, opaths, msg, is_decrypt) = (
-            m.get_one::<String>("mac")
-                .map(|x| x.parse::<usize>().unwrap())
-                .unwrap(),
-            m.get_one::<PathBuf>("nonce").unwrap(),
-            m.get_one::<PathBuf>("ad").unwrap(),
-            bm.get_many::<PathBuf>("file").unwrap().collect::<Vec<_>>(),
-            bm.get_many::<PathBuf>("output")
-                .unwrap()
-                .collect::<Vec<_>>(),
-            bm.get_one::<String>("msg").cloned().unwrap_or_default(),
-            bm.get_flag("decrypt"),
-        );
+    pub fn gcm_cipher(
+        &self,
+        key: Key,
+    ) -> anyhow::Result<Box<dyn AuthenticationCipherX + Send + Sync + 'static>> {
+        let block_cipher = self.r#type.block_cipher(key)?;
+        Ok(Box::new(GCM::new(block_cipher, self.mac_size as usize)?))
+    }
 
-        assert_eq!(
-            ipaths.len(),
-            opaths.len(),
-            "the file path numbers must equal to output path numbers"
-        );
+    pub fn run(
+        cipher: Box<dyn AuthenticationCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        nonce: &[u8],
+        associated_data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        CCMArgs::run(cipher, data, nonce, associated_data, is_decrypt)
+    }
 
-        let mut ccm = Vec::with_capacity(bc.len());
-        for x in bc {
-            ccm.push(GCM::new(x, mac).unwrap())
+    fn cipher_data(&self, data: &[u8], nonce: &[u8], associated_data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let key = self.generate_key(&header)?;
+
+        let cipher = self.gcm_cipher(key)?;
+        let data = Self::run(cipher, data, nonce, associated_data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
         }
 
-        let (nonce, ad) = (read(nonce).unwrap(), read(ad).unwrap());
-        let (nonce, ad) = (nonce.as_slice(), ad.as_slice());
-        if !msg.is_empty() {
-            let ccm = ccm.pop().unwrap();
-            let (msg, mut buf) = (msg.as_bytes(), Vec::with_capacity(msg.len() + 128));
-            if is_decrypt {
-                ccm.auth_decrypt_x(nonce, ad, msg, &mut buf).unwrap();
-            } else {
-                ccm.auth_encrypt_x(nonce, ad, msg, &mut buf).unwrap();
-            }
-            for x in buf {
-                print!("{:02x}", x);
-            }
-            println!()
-        }
+        self.common.write_data(header, &data, &self.common.io)?;
 
-        if ccm.len() < 2 {
-            for (c, (ipath, opath)) in ccm.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                let data = std::fs::read(ipath).unwrap();
-                let (data, mut buf) = (data.as_slice(), Vec::with_capacity(data.len() + 128));
-                if is_decrypt {
-                    c.auth_decrypt_x(nonce, ad, data, &mut buf).unwrap();
-                } else {
-                    c.auth_encrypt_x(nonce, ad, data, &mut buf).unwrap();
-                }
-                std::fs::write(opath, data).unwrap();
-            }
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        let nonce = Salt::try_from(&self.nonce).unwrap().to_bytes();
+        let adata = if self.adata.is_specified() {
+            IVector::try_from(&self.adata).unwrap().to_bytes()
         } else {
-            let x = scope::<'_, _, Result<()>>(move |s| {
-                for (c, (ipath, opath)) in ccm.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                    s.spawn::<_, Result<()>>(move || {
-                        let data = std::fs::read(ipath)?;
-                        let (data, mut buf) =
-                            (data.as_slice(), Vec::with_capacity(data.len() + 128));
-                        if is_decrypt {
-                            c.auth_decrypt_x(nonce, ad, data, &mut buf)?;
-                        } else {
-                            c.auth_encrypt_x(nonce, ad, data, &mut buf)?;
-                        }
-                        std::fs::write(opath, data)?;
-                        Ok(())
-                    });
-                }
-                Ok(())
-            });
+            Vec::new()
+        };
+        let (nonce, adata) = (nonce.as_slice(), adata.as_slice());
 
-            x.unwrap();
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe, nonce, adata).unwrap();
+            return;
         }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes(), nonce, adata).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run(nonce, adata);
+    }
+
+    fn multiple_thread_to_run(&self, nonce: &[u8], associated_data: &[u8]) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+
+        let header_info = header_info.as_str();
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(self.common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !self.common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some(key) = log_error(self.generate_key(&header)) else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(self.gcm_cipher(key)) else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(
+                            cipher,
+                            &data,
+                            nonce,
+                            associated_data,
+                            self.common.decrypt,
+                        )) else {
+                            continue;
+                        };
+
+                        log_error(self.common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
     }
 }

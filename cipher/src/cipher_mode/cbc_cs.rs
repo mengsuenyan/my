@@ -9,15 +9,15 @@
 //!
 //! 记所使用的分组加密算法的分组字节大小为`b`, 明文为`P`, 密文为`C`. 有三种CS模式: <br>
 //!
-//! ## CBS-CS1 <br>
+//! ## CBC-CS1 <br>
 //!
-//! - CBS-CS1-Encrypt:
+//! - CBC-CS1-Encrypt:
 //!   - `d = P.len() % b`, `n = (P.len() + b - 1) / b`.
 //!     - 若`d != 0`则第`n`个分组补`b - d`个0.
 //!   - CBC加密得到密文$(C_1, \cdots, C_n)$;
 //!   - $C'_{n-1} = MSB_d(C_{n-1})$;
 //!   - 密文: $C_1 || C_2 || \cdots || C'_{n-1} || C_n$.
-//! - CBS-CS1-Decrypt:
+//! - CBC-CS1-Decrypt:
 //!   - `d = C.len() % b`, `n = (C.len() + b - 1) / b`.
 //!     - 若`d != 0`说明$C_{n-1}$是不完整的, 记为$C'_{n-1}$
 //!   - $Z' = MSB_d(CIPH^{-1}_K(C_n)), Z'' = LSB_{b-d}(CIPH^{-1}_K(C_n))$;
@@ -29,21 +29,21 @@
 //! 注: 原理是$C_n = CIPH_K(I_n), I_n = P' \oplus C_{n-1}' || C_{n-1}''$,
 //! 即$C_{n-1}$的后半段可以通过$C_n$解密后的后半段得到;
 //!
-//! ## CBS-CS2 <br>
+//! ## CBC-CS2 <br>
 //!
-//! - CBS-CS2-Encrypt
+//! - CBC-CS2-Encrypt
 //!   - 使用CBS-CS1-Encrypt得到$C_1 || C_2 || \cdots || C'_{n-1} || C_n$;
 //!   - 若`d=b`, 结果便是如上. 否则: $C_1 || C_2 || \cdots || C_n || C'_{n-1}$;
-//! - CBS-CS2-Decrypt
+//! - CBC-CS2-Decrypt
 //!   - 若`d != b`, 则调整顺序$C_1 || C_2 || \cdots || C'_n || C_{n-1}$;
 //!   - 使用CBS-CS1-Decrypt解密
 //!
-//! ## CBS-CS3 <br>
+//! ## CBC-CS3 <br>
 //!
-//! - CBS-CS3-Encrypt
+//! - CBC-CS3-Encrypt
 //!   - 使用CBS-CS1-Encrypt得到$C_1 || C_2 || \cdots || C'_{n-1} || C_n$;
 //!   - 输出$C_1 || C_2 || \cdots || C_n || C'_{n-1}$;
-//! - CBS-CS3-Decrypt
+//! - CBC-CS3-Decrypt
 //!   - 调整顺序$C_1 || C_2 || \cdots || C'_n || C_{n-1}$;
 //!   - 使用CBS-CS1-Decrypt解密
 //!

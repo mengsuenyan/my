@@ -215,13 +215,13 @@ where
         self.mac_size
     }
 
-    fn auth_encrypt<R: Read, W: Write>(
+    fn auth_encrypt_mac<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
         in_data: &mut R,
         out_data: &mut W,
-    ) -> Result<(usize, usize), CipherError> {
+    ) -> Result<(usize, usize, Vec<u8>), CipherError> {
         Self::check_nonce_size(nonce.len())?;
 
         let h = self.gcm_ae_h();
@@ -246,7 +246,7 @@ where
             .map_err(CipherError::from)?;
 
         olen += self.mac_size;
-        Ok((ilen, olen))
+        Ok((ilen, olen, buf[..self.mac_size].to_vec()))
     }
 
     fn auth_decrypt<R: Read, W: Write>(
@@ -448,15 +448,15 @@ where
         self.gcm.mac_size()
     }
 
-    fn auth_encrypt<R: Read, W: Write>(
+    fn auth_encrypt_mac<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
         in_data: &mut R,
         out_data: &mut W,
-    ) -> Result<(usize, usize), CipherError> {
+    ) -> Result<(usize, usize, Vec<u8>), CipherError> {
         self.gcm
-            .auth_encrypt(nonce, associated_data, in_data, out_data)
+            .auth_encrypt_mac(nonce, associated_data, in_data, out_data)
     }
 
     fn auth_decrypt<R: Read, W: Write>(

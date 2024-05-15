@@ -1,71 +1,56 @@
-pub trait Cmd {
-    const NAME: &'static str;
+use clap::{Parser, Subcommand};
 
-    fn cmd() -> Command;
-
-    fn run(&self, m: &ArgMatches);
-}
-
-pub struct WorkingdirGuard<'a> {
-    pre: &'a Path,
-}
-
-impl<'a> WorkingdirGuard<'a> {
-    fn new(pre: &'a Path, cur: &'a Path) -> Self {
-        if let Err(e) = std::env::set_current_dir(cur) {
-            panic!("set current dir to `{}` failed, {e}", cur.display());
-        }
-
-        Self { pre }
-    }
-}
-
-impl<'a> Drop for WorkingdirGuard<'a> {
-    fn drop(&mut self) {
-        if let Err(e) = std::env::set_current_dir(self.pre) {
-            panic!("set current dir to `{}` failed, {e}", self.pre.display());
-        }
-    }
-}
-
-mod my_fs;
-use std::path::Path;
-
-use clap::{ArgMatches, Command};
-pub use my_fs::MyFsCmd;
-
-mod tokei;
-pub use tokei::TokeiCmd;
-
-mod git;
-pub use git::GitCmd;
-
-mod enc;
-pub use enc::EncCmd;
-
-mod pipe_data;
-pub use pipe_data::PipeDataCmd;
-
-pub mod sky;
-pub use sky::SkyCmd;
-
-mod hash;
-pub use hash::HashCmd;
-
-mod key;
-pub use key::KeyCmd;
-
-mod sign;
-pub use sign::SignCmd;
-
-mod crypto;
-pub use crypto::CryptoCmd;
-
+pub mod args;
+pub mod config;
+pub mod crypto;
+pub mod enc;
+mod fs;
+pub mod git;
+pub mod group;
+pub mod guard;
+pub mod hash;
+pub mod info;
+pub mod kdf;
 pub mod mac;
-pub use mac::MACCmd;
+mod sign;
 
-mod pkcs;
-pub use pkcs::PKCSCmd;
+pub const fn my_version() -> &'static str {
+    concat!(env!("MY_VERSION_INFO"), " (", env!("MY_GIT_INFO"), ")")
+}
 
-mod group;
-pub use group::GroupCmd;
+pub const fn my_name() -> &'static str {
+    env!("CARGO_PKG_NAME")
+}
+
+#[derive(Parser)]
+#[command(name = my_name(), version = my_version())]
+pub struct MyCli {
+    #[arg(short, long, help = "receive data from pipe")]
+    pub pipe: bool,
+
+    #[arg(long, help = "config file path")]
+    pub config: Option<String>,
+
+    #[command(subcommand)]
+    pub comand: Option<MySubCmd>,
+}
+
+#[derive(Subcommand)]
+pub enum MySubCmd {
+    Version,
+    #[command(name = "hash", alias = "h")]
+    Hash(hash::HashCmd),
+    #[command(name = "enc")]
+    Encode(enc::EncCmd),
+    #[command(name = "git")]
+    Git(git::GitCmd),
+    #[command(name = "key", alias = "k")]
+    KDF(Box<kdf::KDFArgs>),
+    #[command(name = "mac")]
+    MAC(mac::MACArgs),
+    #[command(name = "crypto", alias = "c")]
+    Crypto(Box<crypto::CryptoArgs>),
+    Sign(sign::SignArgs),
+    Group(group::GroupArgs),
+    Fs(fs::FsArgs),
+}

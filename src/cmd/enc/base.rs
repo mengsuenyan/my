@@ -1,233 +1,107 @@
-use crate::cmd::Cmd;
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use encode::base::{Base16, Base32, Base58, Base64};
-use encode::{Decode, Encode};
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Read, Write};
-use std::path::PathBuf;
+use std::io::{Read, Write};
 
-struct Base<T: Encode + Decode> {
-    base: T,
+use clap::Args;
+use encode::{
+    base::{Base16, Base32, Base64},
+    Decode, Encode,
+};
+
+use crate::cmd::{args::IOArgs, config::MyConfig};
+
+#[derive(Args)]
+pub struct BaseArgs {
+    #[arg(value_name = "STRING", allow_hyphen_values = true)]
+    pub str: Option<String>,
+
+    #[command(flatten)]
+    pub io: IOArgs,
+
+    #[arg(short, long)]
+    pub decode: bool,
 }
 
-impl<T: Encode + Decode> Base<T> {
-    fn new(base: T) -> Self {
-        Self { base }
+#[derive(Args)]
+#[command(about = "base16(PIPE | STRING | file)")]
+pub struct Base16Args {
+    #[command(flatten)]
+    b16: BaseArgs,
+}
+
+#[derive(Args)]
+#[command(about = "base32(PIPE | STRING | file)")]
+pub struct Base32Args {
+    #[command(flatten)]
+    b32: BaseArgs,
+
+    #[arg(long)]
+    #[arg(help = "use base32 url code table")]
+    url: bool,
+}
+
+#[derive(Args)]
+#[command(about = "base64(PIPE | STRING | file)")]
+pub struct Base64Args {
+    #[command(flatten)]
+    b64: BaseArgs,
+
+    #[arg(long)]
+    #[arg(help = "use base32 url code table")]
+    url: bool,
+}
+
+impl BaseArgs {
+    pub fn exe<T: Encode + Decode>(self, mut b: T, pipe: Option<&[u8]>) {
+        let file_data = self.io.read_all_data().unwrap();
+
+        let mut ostream = self
+            .io
+            .writer_with_default(MyConfig::config().io_buf_size)
+            .unwrap();
+
+        if let Some(data) = pipe {
+            self.exe_inner(&mut b, data, &mut ostream)
+        }
+
+        if let Some(data) = self.str.as_deref() {
+            self.exe_inner(&mut b, data.as_bytes(), &mut ostream);
+        }
+
+        if let Some(data) = file_data.as_deref() {
+            self.exe_inner(&mut b, data, &mut ostream);
+        }
     }
 
-    fn cmd(name: &'static str) -> Command {
-        Command::new(name)
-            .arg(
-                Arg::new("str")
-                    .value_name("STRING")
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(String))
-                    .required(false)
-                    .help("Byte string")
-            )
-            .arg(
-                Arg::new("filename")
-                    .value_name("FILE")
-                    .long("file")
-                    .short('f')
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(false)
-                    .help("To specified the file that need to convert to base string")
-            )
-            .arg(
-                Arg::new("output")
-                    .value_name("FILE")
-                    .long("output")
-                    .short('o')
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf))
-                    .required(false)
-                    .help("To specified the file to save the base string that include PIPE,STRING,FILE hex string")
-            )
-            .arg(
-                Arg::new("replace")
-                    .long("replace")
-                    .short('r')
-                    .action(ArgAction::SetTrue)
-                    .required(false)
-                    .help("Is whether to truncate the output File before save the hex string")
-            )
-            .arg(
-                Arg::new("decode")
-                    .long("decode")
-                    .short('d')
-                    .action(ArgAction::SetTrue)
-                    .required(false)
-                    .help("base decode")
-            )
-    }
-
-    fn run(&mut self, m: &ArgMatches, pipe_data: Option<&[u8]>) {
-        let (p_str, iname, oname, is_decode, is_replace) = (
-            m.get_one::<String>("str"),
-            m.get_one::<PathBuf>("filename"),
-            m.get_one::<PathBuf>("output"),
-            m.get_flag("decode"),
-            m.get_flag("replace"),
-        );
-
-        let mut file_data = iname
-            .map(|p| utils::io::VecRead::new(std::fs::read(p).unwrap()))
-            .unwrap_or_default();
-
-        let oname = if oname.is_none() && is_replace {
-            iname
+    fn exe_inner<T: Encode + Decode, R: Read, W: Write>(
+        &self,
+        b: &mut T,
+        mut istream: R,
+        ostream: &mut W,
+    ) {
+        if self.decode {
+            let _ = b.decode(&mut istream, ostream).unwrap();
         } else {
-            oname
-        };
-
-        let mut ostream: Box<dyn Write> = match oname {
-            Some(x) => Box::new(BufWriter::new(
-                OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .create_new(!(is_replace && x.is_file()))
-                    .open(x)
-                    .unwrap(),
-            )),
-            None => Box::new(BufWriter::new(std::io::stdout().lock())),
-        };
-
-        if let Some(mut pipe_data) = pipe_data {
-            self.exe_base(&mut pipe_data, &mut ostream, is_decode);
-        }
-
-        if let Some(p_str) = p_str {
-            self.exe_base(&mut p_str.as_bytes(), &mut ostream, is_decode);
-        }
-
-        if !file_data.is_empty() {
-            self.exe_base(&mut file_data, &mut ostream, is_decode);
-        }
-    }
-
-    fn exe_base<R: Read, W: Write>(&mut self, istream: &mut R, ostream: &mut W, is_decode: bool) {
-        let _o = if is_decode {
-            self.base.decode(istream, ostream).unwrap()
-        } else {
-            self.base.encode(istream, ostream).unwrap()
-        };
-    }
-}
-
-pub struct Base16Cmd {
-    pipe_data: Vec<u8>,
-}
-
-impl Base16Cmd {
-    pub fn new(pipe_data: &[u8]) -> Self {
-        Self {
-            pipe_data: pipe_data.to_vec(),
+            let _ = b.encode(&mut istream, ostream).unwrap();
         }
     }
 }
 
-impl Cmd for Base16Cmd {
-    const NAME: &'static str = "b16";
-
-    fn cmd() -> Command {
-        Base::<Base16>::cmd(Self::NAME).about("base16")
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let mut base = Base::new(Base16::new());
-
-        base.run(m, Some(self.pipe_data.as_slice()));
+impl Base16Args {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        self.b16.exe(Base16::new(), pipe);
     }
 }
 
-pub struct Base32Cmd {
-    pipe_data: Vec<u8>,
-}
-
-impl Base32Cmd {
-    pub fn new(pipe_data: &[u8]) -> Self {
-        Self {
-            pipe_data: pipe_data.to_vec(),
-        }
+impl Base32Args {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        let is_std = !self.url;
+        self.b32.exe(Base32::new(is_std), pipe);
     }
 }
 
-impl Cmd for Base32Cmd {
-    const NAME: &'static str = "b32";
+impl Base64Args {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        let is_std = !self.url;
 
-    fn cmd() -> Command {
-        Base::<Base32>::cmd(Self::NAME).about("base32").arg(
-            Arg::new("url")
-                .long("url")
-                .action(ArgAction::SetTrue)
-                .required(false)
-                .help("use base32 url code table"),
-        )
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let mut base = Base::new(Base32::new(!m.get_flag("url")));
-
-        base.run(m, Some(self.pipe_data.as_slice()));
-    }
-}
-
-pub struct Base64Cmd {
-    pipe_data: Vec<u8>,
-}
-
-impl Base64Cmd {
-    pub fn new(pipe_data: &[u8]) -> Self {
-        Self {
-            pipe_data: pipe_data.to_vec(),
-        }
-    }
-}
-
-impl Cmd for Base64Cmd {
-    const NAME: &'static str = "b64";
-
-    fn cmd() -> Command {
-        Base::<Base64>::cmd(Self::NAME).about("base64").arg(
-            Arg::new("url")
-                .long("url")
-                .action(ArgAction::SetTrue)
-                .required(false)
-                .help("use base32 url code table"),
-        )
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let mut base = Base::new(Base64::new(!m.get_flag("url")));
-
-        base.run(m, Some(self.pipe_data.as_slice()));
-    }
-}
-
-pub struct Base58Cmd {
-    pipe_data: Vec<u8>,
-}
-
-impl Base58Cmd {
-    pub fn new(pipe_data: &[u8]) -> Self {
-        Self {
-            pipe_data: pipe_data.to_vec(),
-        }
-    }
-}
-
-impl Cmd for Base58Cmd {
-    const NAME: &'static str = "b58";
-
-    fn cmd() -> Command {
-        Base::<Base58>::cmd(Self::NAME).about("base58")
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let mut base = Base::new(Base58::new());
-
-        base.run(m, Some(self.pipe_data.as_slice()));
+        self.b64.exe(Base64::new(is_std), pipe);
     }
 }

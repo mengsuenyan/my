@@ -1,303 +1,1050 @@
-use anyhow::Result;
+use std::ops::Range;
+use std::thread;
+
+use cipher::cipher_mode::{CBCCs, CBCCsMode, DefaultCounter, CBC, CFB, CTR, OFB};
+use cipher::stream_cipher::StreamDecryptX;
 use cipher::{
-    cipher_mode::{CBCCs, CBCCsMode, DefaultCounter, DefaultPadding, CBC, CFB, CTR, ECB, OFB},
-    BlockCipherX, BlockEncryptX, Cipher,
+    cipher_mode::{DefaultPadding, ECB},
+    stream_cipher::StreamCipherX,
 };
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use std::{ops::Range, path::PathBuf, sync::Mutex};
+use clap::{builder::EnumValueParser, Args, ValueEnum};
 
-use crate::cmd::Cmd;
+use crate::cmd::args::{IVector, Salt};
+use crate::cmd::crypto::header::Header;
+use crate::cmd::info::Info;
+use crate::cmd::{
+    args::{IVArgs, Key},
+    config::MyConfig,
+    kdf::KDFSubArgs,
+};
+use crate::log_error;
 
-use super::{common_crypto, AES128Cmd, AES192Cmd, AES256Cmd, SM4Cmd};
+use super::{block::BlockCipherType, CryptoCommonArgs};
 
-pub fn common_command(name: &'static str) -> Command {
-    Command::new(name)
-        .subcommand_required(true)
-        .subcommand(SM4Cmd::cmd())
-        .subcommand(AES128Cmd::cmd())
-        .subcommand(AES192Cmd::cmd())
-        .subcommand(AES256Cmd::cmd())
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Padding {
+    #[value(name = "0x80", help = "append 0x80, then padding 0x00 to block size")]
+    HEX80,
 }
 
-pub fn common_run<'a>(
-    name: &str,
-    m: &'a ArgMatches,
-) -> Result<(Vec<Box<dyn BlockCipherX + Send + Sync>>, &'a ArgMatches)> {
-    let Some((block, bm)) = m.subcommand() else {
-        anyhow::bail!("need to specify the block cipher for {}", name);
-    };
-
-    let bc = match block {
-        SM4Cmd::NAME => SM4Cmd.generate_block_cipher(bm).unwrap(),
-        AES128Cmd::NAME => AES128Cmd.generate_block_cipher(bm).unwrap(),
-        AES192Cmd::NAME => AES192Cmd.generate_block_cipher(bm).unwrap(),
-        AES256Cmd::NAME => AES256Cmd.generate_block_cipher(bm).unwrap(),
-        name => anyhow::bail!("not support the {}", name),
-    };
-
-    Ok((bc, bm))
+#[derive(Clone, Copy, Eq, PartialEq, ValueEnum)]
+pub enum Counter {
+    #[value(name = "inc", help = "increment counter")]
+    Inc,
 }
 
-macro_rules! def_cipher_mode_cmd {
-    ($NAME: ident) => {
-        #[derive(Clone)]
-        pub struct $NAME;
-    };
-    ($NAME1:  ident, $($NAME2: ident),+) => {
-        def_cipher_mode_cmd!($NAME1);
-        def_cipher_mode_cmd!($($NAME2),+);
+#[derive(Clone, Copy, Eq, PartialEq, ValueEnum)]
+pub enum CBCCSType {
+    #[value(name = "cs1")]
+    CBCCS1,
+    #[value(name = "cs2")]
+    CBCCS2,
+    #[value(name = "cs3")]
+    CBCCS3,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args))]
+#[command(about = "The Electronic Codebook Mode(NIST SP 800-38A)")]
+pub struct ECBArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    /// append 0x80, then padding 0x00 to block size
+    #[arg(value_enum, long, default_value = "0x80")]
+    pub pad: Padding,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args), mut_group("iv", |g| g.required(false)))]
+#[command(about = "The Cipher Block Chaining Mode(NIST SP 800-38A)")]
+pub struct CBCArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    /// append 0x80, then padding 0x00 to block size
+    #[arg(value_enum, long, default_value = "0x80")]
+    pub pad: Padding,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    iv: IVArgs,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args), mut_group("iv", |g| g.required(false)))]
+#[command(about = "The Cipher Feedback Mode(NIST SP 800-38A)")]
+pub struct CFBArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    /// append 0x80, then padding 0x00 to block size
+    #[arg(value_enum, long, default_value = "0x80")]
+    pub pad: Padding,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    iv: IVArgs,
+
+    #[arg(
+        short,
+        help = "the CFB `s` parameter that need to less than or equal to block size"
+    )]
+    #[arg(value_parser = clap::value_parser!(u32).range(1..), default_value = "16")]
+    s: u32,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args), mut_group("iv", |g| g.required(false)))]
+#[command(about = "The Output Feedback Mode(NIST SP 800-38A)")]
+pub struct OFBArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    iv: IVArgs,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args), mut_group("iv", |g| g.required(false)))]
+#[command(about = "The Counter Mode(NIST SP 800-38A)")]
+pub struct CTRArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    #[arg(value_enum, long, default_value = "inc", help = "counter type")]
+    pub ctr: Counter,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    iv: IVArgs,
+}
+
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args), mut_group("iv", |g| g.required(false)))]
+#[command(about = "The Cipher Block Chaining-Ciphertext Stealing(NIST SP 800-38A-add)")]
+pub struct CBCCSArgs {
+    #[command(flatten)]
+    common: CryptoCommonArgs,
+
+    #[arg(name="type", short, long, default_value = "aes128", value_parser = EnumValueParser::<BlockCipherType>::new())]
+    pub r#type: BlockCipherType,
+
+    #[arg(
+        value_enum,
+        long,
+        default_value = "cs1",
+        help = "ciphertext stealing type"
+    )]
+    pub cs: CBCCSType,
+
+    #[command(subcommand)]
+    pub kdf: KDFSubArgs,
+
+    #[command(flatten)]
+    iv: IVArgs,
+}
+
+impl ECBArgs {
+    pub fn ecb_cipher(
+        block: BlockCipherType,
+        pad: Padding,
+        key: Key,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+        match pad {
+            Padding::HEX80 => Ok(Box::new(ECB::<DefaultPadding, _>::new(block_cipher))),
+        }
     }
-}
 
-def_cipher_mode_cmd!(ECBCmd, CBCCmd, CFBCmd, OFBCmd, CTRCmd, CBCsCmd);
-
-impl Cmd for ECBCmd {
-    const NAME: &'static str = "ecb";
-    fn cmd() -> clap::Command {
-        common_command(Self::NAME)
-            .about("electronic codebook mode")
-            .arg(
-                Arg::new("padding")
-                    .long("padding")
-                    .required(false)
-                    .action(ArgAction::Set)
-                    .default_value("default")
-                    .value_parser(["default"])
-                    .help("padding method"),
-            )
-    }
-    fn run(&self, m: &clap::ArgMatches) {
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
-
-        let mut ecb: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> =
-                Box::new(Mutex::new(ECB::<DefaultPadding, _>::new(bc)));
-            ecb.push(x);
+    pub fn run(
+        mut cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut res = MyConfig::tmp_buf();
+        if is_decrypt {
+            let _ = cipher.stream_decrypt_x(data, &mut res)?;
+            let _ = cipher.stream_decrypt_finish_x(&mut res)?;
+        } else {
+            let _ = cipher.stream_encrypt_x(data, &mut res)?;
+            let _ = cipher.stream_encrypt_finish_x(&mut res)?;
         }
 
-        common_crypto(ecb, bm).unwrap()
-    }
-}
-
-impl Cmd for CBCCmd {
-    const NAME: &'static str = "cbc";
-    fn cmd() -> Command {
-        common_command(Self::NAME)
-            .about("cipher block chaining mode")
-            .arg(
-                Arg::new("padding")
-                    .long("padding")
-                    .required(false)
-                    .action(ArgAction::Set)
-                    .default_value("default")
-                    .value_parser(["default"])
-                    .help("padding method"),
-            )
-            .arg(
-                Arg::new("iv")
-                    .help("initial vector that length must eqaul to block size")
-                    .long("iv")
-                    .required(true)
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf)),
-            )
+        Ok(res)
     }
 
-    fn run(&self, m: &ArgMatches) {
-        let iv = m.get_one::<PathBuf>("iv").unwrap();
-        let iv = std::fs::read(iv).unwrap();
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<Key> {
+        kdf.append_key(Key::from(header.digest()))?;
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
 
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
-
-        let mut cbc: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> = Box::new(Mutex::new(
-                CBC::<DefaultPadding, _>::new(bc, iv.clone()).unwrap(),
-            ));
-            cbc.push(x);
-        }
-
-        common_crypto(cbc, bm).unwrap()
-    }
-}
-
-impl Cmd for CFBCmd {
-    const NAME: &'static str = "cfb";
-    fn cmd() -> Command {
-        common_command(Self::NAME)
-            .about("cipher feedback mode")
-            .arg(
-                Arg::new("padding")
-                    .long("padding")
-                    .required(false)
-                    .action(ArgAction::Set)
-                    .default_value("default")
-                    .value_parser(["default"])
-                    .help("padding method"),
-            )
-            .arg(
-                Arg::new("iv")
-                    .help("initial vector that length must eqaul to block size")
-                    .long("iv")
-                    .required(true)
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf)),
-            )
-            .arg(
-                Arg::new("bytes")
-                    .help("the CFB s parameter that need to less than or equal to block size")
-                    .long("bytes")
-                    .default_value("16")
-                    .required(true)
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(usize)),
-            )
+        kdf.set_ksize(block_type.key_size());
+        kdf.run()
     }
 
-    fn run(&self, m: &ArgMatches) {
-        let s = m.get_one::<usize>("bytes").copied().unwrap();
-        let iv = m.get_one::<PathBuf>("iv").unwrap();
-        let iv = std::fs::read(iv).unwrap();
-
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
-
-        let mut cfb: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> = Box::new(Mutex::new(
-                CFB::<DefaultPadding, _>::new(bc, iv.clone(), s).unwrap(),
-            ));
-            cfb.push(x);
-        }
-
-        common_crypto(cfb, bm).unwrap()
-    }
-}
-
-impl Cmd for OFBCmd {
-    const NAME: &'static str = "ofb";
-    fn cmd() -> Command {
-        common_command(Self::NAME)
-            .about("output feedback mode")
-            .arg(
-                Arg::new("iv")
-                    .help("initial vector that length must eqaul to block size")
-                    .long("iv")
-                    .required(true)
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf)),
-            )
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let iv = m.get_one::<PathBuf>("iv").unwrap();
-        let iv = std::fs::read(iv).unwrap();
-
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
-
-        let mut ofb: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> =
-                Box::new(Mutex::new(OFB::new(bc, iv.clone()).unwrap()));
-            ofb.push(x);
-        }
-
-        common_crypto(ofb, bm).unwrap()
-    }
-}
-
-impl Cmd for CTRCmd {
-    const NAME: &'static str = "ctr";
-    fn cmd() -> Command {
-        common_command(Self::NAME)
-            .about("counter mode")
-            .arg(
-                Arg::new("iv")
-                    .help("initial vector that length must eqaul to block size")
-                    .long("iv")
-                    .required(true)
-                    .action(ArgAction::Set)
-                    .value_parser(value_parser!(PathBuf)),
-            )
-            .arg(
-                Arg::new("counter")
-                    .help("counter type")
-                    .long("counter")
-                    .required(false)
-                    .default_value("default")
-                    .action(ArgAction::Set)
-                    .value_parser(["default"]),
-            )
-    }
-    fn run(&self, m: &ArgMatches) {
-        let iv = m.get_one::<PathBuf>("iv").unwrap();
-        let iv = std::fs::read(iv).unwrap();
-
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
-        let counter = DefaultCounter::new(
-            iv,
-            Range {
-                start: 0,
-                end: BlockEncryptX::block_size_x(&bc[0]),
-            },
-        )
-        .unwrap();
-
-        let mut ctr: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> =
-                Box::new(Mutex::new(CTR::new(bc, counter.clone()).unwrap()));
-            ctr.push(x);
-        }
-
-        common_crypto(ctr, bm).unwrap()
-    }
-}
-
-impl Cmd for CBCsCmd {
-    const NAME: &'static str = "cbcs";
-    fn cmd() -> Command {
-        common_command(Self::NAME)
-        .about("cipher block chaining-ciphertext stealing. Note: the data size need to great than block size")
-        .arg(
-            Arg::new("iv")
-            .help("initial vector that length must eqaul to block size")
-            .long("iv")
-            .required(true)
-            .action(ArgAction::Set)
-            .value_parser(value_parser!(PathBuf))
-        )
-        .arg(
-            Arg::new("mode")
-            .help("to specify the CBC work mode")
-            .long("mode")
-            .required(true)
-            .default_value("cbcs1")
-            .value_parser(["cbcs1", "cbcs2", "cbcs3"])
-            .action(ArgAction::Set)
-        )
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        let iv = m.get_one::<PathBuf>("iv").unwrap();
-        let iv = std::fs::read(iv).unwrap();
-
-        let mode = match m.get_one::<String>("mode").unwrap().as_str() {
-            "cbcs1" => CBCCsMode::CbcCs1,
-            "cbcs2" => CBCCsMode::CbcCs2,
-            "cbcs3" => CBCCsMode::CbcCs3,
-            m => unreachable!("not support the CBCsMode: {}", m),
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
         };
 
-        let (bc, bm) = common_run(Self::NAME, m).unwrap();
+        let key = Self::generate_key(self.kdf.clone(), &header, self.r#type)?;
 
-        let mut cbcs: Vec<Box<dyn Cipher + Send + Sync>> = Vec::with_capacity(bc.len());
-        for bc in bc {
-            let x: Box<dyn Cipher + Send + Sync> =
-                Box::new(Mutex::new(CBCCs::new(bc, iv.clone(), mode).unwrap()));
-            cbcs.push(x);
+        let cipher = Self::ecb_cipher(self.r#type, self.pad, key)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
         }
 
-        common_crypto(cbcs, bm).unwrap()
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+
+        let (common, kdf, block_type, pad, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.r#type,
+            self.pad,
+            header_info.as_str(),
+        );
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some(key) =
+                            log_error(Self::generate_key(kdf.clone(), &header, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(Self::ecb_cipher(block_type, pad, key)) else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl CBCArgs {
+    pub fn cbc_cipher(
+        block: BlockCipherType,
+        pad: Padding,
+        key: Key,
+        iv: IVector,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+        match pad {
+            Padding::HEX80 => Ok(Box::new(CBC::<DefaultPadding, _>::new(
+                block_cipher,
+                iv.to_bytes(),
+            )?)),
+        }
+    }
+
+    pub fn run(
+        cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        ECBArgs::run(cipher, data, is_decrypt)
+    }
+
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        iv_arg: &IVArgs,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<(Key, IVector)> {
+        kdf.append_key(Key::from(header.digest()))?;
+        let mut iv_kdf = kdf.clone();
+
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
+
+        if iv_arg.is_specified() {
+            let iv: IVector = iv_arg.try_into()?;
+            iv_kdf.append_salt(iv)?;
+        }
+        iv_kdf.append_salt(Salt::from(header.file_name()))?;
+        iv_kdf.append_salt(Salt::from(header.digest()))?;
+
+        kdf.set_ksize(block_type.key_size());
+        iv_kdf.set_ksize(block_type.block_size());
+        Ok((kdf.run()?, iv_kdf.run()?))
+    }
+
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let (key, iv) = Self::generate_key(self.kdf.clone(), &header, &self.iv, self.r#type)?;
+        let cipher = Self::cbc_cipher(self.r#type, self.pad, key, iv)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+        let (common, kdf, block_type, pad, iv, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.r#type,
+            self.pad,
+            &self.iv,
+            header_info.as_str(),
+        );
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some((key, iv)) =
+                            log_error(Self::generate_key(kdf.clone(), &header, iv, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(Self::cbc_cipher(block_type, pad, key, iv))
+                        else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl CFBArgs {
+    pub fn cfb_cipher(
+        block: BlockCipherType,
+        pad: Padding,
+        key: Key,
+        iv: IVector,
+        s: usize,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+        match pad {
+            Padding::HEX80 => Ok(Box::new(CFB::<DefaultPadding, _>::new(
+                block_cipher,
+                iv.to_bytes(),
+                s,
+            )?)),
+        }
+    }
+
+    pub fn run(
+        cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        ECBArgs::run(cipher, data, is_decrypt)
+    }
+
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        iv_arg: &IVArgs,
+        s: u32,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<(Key, IVector)> {
+        kdf.append_key(Key::from(header.digest()))?;
+        let mut iv_kdf = kdf.clone();
+        let s = Vec::from(s.to_be_bytes());
+
+        kdf.append_key(Key::from(s.as_slice()))?;
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
+
+        if iv_arg.is_specified() {
+            let iv: IVector = iv_arg.try_into()?;
+            iv_kdf.append_salt(iv)?;
+        }
+        iv_kdf.append_salt(Salt::from(header.file_name()))?;
+        iv_kdf.append_salt(Salt::from(header.digest()))?;
+        iv_kdf.append_salt(Salt::from(s))?;
+
+        kdf.set_ksize(block_type.key_size());
+        iv_kdf.set_ksize(block_type.block_size());
+        Ok((kdf.run()?, iv_kdf.run()?))
+    }
+
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let (key, iv) =
+            Self::generate_key(self.kdf.clone(), &header, &self.iv, self.s, self.r#type)?;
+        let cipher = Self::cfb_cipher(self.r#type, self.pad, key, iv, self.s as usize)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        assert!(
+            self.s as usize <= self.r#type.block_size(),
+            "`s` must be less than block size `{}`",
+            self.r#type.block_size()
+        );
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+        let (common, kdf, s, block_type, pad, iv, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.s,
+            self.r#type,
+            self.pad,
+            &self.iv,
+            header_info.as_str(),
+        );
+
+        thread::scope(|scope| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                scope.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some((key, iv)) =
+                            log_error(Self::generate_key(kdf.clone(), &header, iv, s, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) =
+                            log_error(Self::cfb_cipher(block_type, pad, key, iv, s as usize))
+                        else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl OFBArgs {
+    pub fn ofb_cipher(
+        block: BlockCipherType,
+        key: Key,
+        iv: IVector,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+        Ok(Box::new(OFB::new(block_cipher, iv.to_bytes())?))
+    }
+
+    pub fn run(
+        cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        ECBArgs::run(cipher, data, is_decrypt)
+    }
+
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        iv_arg: &IVArgs,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<(Key, IVector)> {
+        kdf.append_key(Key::from(vec![]))?;
+        let mut iv_kdf = kdf.clone();
+
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
+
+        iv_kdf.append_key(Key::from(header.digest()))?;
+        if iv_arg.is_specified() {
+            let iv: IVector = iv_arg.try_into()?;
+            iv_kdf.append_salt(iv)?;
+        }
+        iv_kdf.append_salt(Salt::from(header.file_name()))?;
+        iv_kdf.append_salt(Salt::from(header.digest()))?;
+
+        kdf.set_ksize(block_type.key_size());
+        iv_kdf.set_ksize(block_type.block_size());
+        Ok((kdf.run()?, iv_kdf.run()?))
+    }
+
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let (key, iv) = Self::generate_key(self.kdf.clone(), &header, &self.iv, self.r#type)?;
+        let cipher = Self::ofb_cipher(self.r#type, key, iv)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+        let (common, kdf, block_type, iv, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.r#type,
+            &self.iv,
+            header_info.as_str(),
+        );
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some((key, iv)) =
+                            log_error(Self::generate_key(kdf.clone(), &header, iv, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(Self::ofb_cipher(block_type, key, iv)) else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl CTRArgs {
+    pub fn ctr_cipher(
+        block: BlockCipherType,
+        counter: Counter,
+        key: Key,
+        iv: IVector,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+        let counter = match counter {
+            Counter::Inc => DefaultCounter::new(
+                iv.to_bytes(),
+                Range {
+                    start: 0,
+                    end: block.block_size(),
+                },
+            )?,
+        };
+
+        Ok(Box::new(CTR::new(block_cipher, counter)?))
+    }
+
+    pub fn run(
+        cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        ECBArgs::run(cipher, data, is_decrypt)
+    }
+
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        iv_arg: &IVArgs,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<(Key, IVector)> {
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
+
+        let mut iv_kdf = kdf.clone();
+        iv_kdf.append_key(Key::from(header.digest()))?;
+        if iv_arg.is_specified() {
+            let iv: IVector = iv_arg.try_into()?;
+            iv_kdf.append_salt(iv)?;
+        }
+        iv_kdf.append_salt(Salt::from(header.file_name()))?;
+        iv_kdf.append_salt(Salt::from(header.digest()))?;
+
+        kdf.set_ksize(block_type.key_size());
+        iv_kdf.set_ksize(block_type.block_size());
+        Ok((kdf.run()?, iv_kdf.run()?))
+    }
+
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let (key, iv) = Self::generate_key(self.kdf.clone(), &header, &self.iv, self.r#type)?;
+        let cipher = Self::ctr_cipher(self.r#type, self.ctr, key, iv)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+        let (common, kdf, counter, block_type, iv, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.ctr,
+            self.r#type,
+            &self.iv,
+            header_info.as_str(),
+        );
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some((key, iv)) =
+                            log_error(Self::generate_key(kdf.clone(), &header, iv, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) =
+                            log_error(Self::ctr_cipher(block_type, counter, key, iv))
+                        else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl From<CBCCSType> for CBCCsMode {
+    fn from(value: CBCCSType) -> Self {
+        match value {
+            CBCCSType::CBCCS1 => Self::CbcCs1,
+            CBCCSType::CBCCS2 => Self::CbcCs2,
+            CBCCSType::CBCCS3 => Self::CbcCs3,
+        }
+    }
+}
+
+impl From<CBCCSType> for String {
+    fn from(value: CBCCSType) -> Self {
+        match value {
+            CBCCSType::CBCCS1 => "cbccs1",
+            CBCCSType::CBCCS2 => "cbccs2",
+            CBCCSType::CBCCS3 => "cbccs3",
+        }
+        .to_string()
+    }
+}
+
+impl CBCCSArgs {
+    pub fn cs_cipher(
+        block: BlockCipherType,
+        cs: CBCCSType,
+        key: Key,
+        iv: IVector,
+    ) -> anyhow::Result<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+        let block_cipher = block.block_cipher(key)?;
+
+        Ok(Box::new(CBCCs::new(
+            block_cipher,
+            iv.to_bytes(),
+            cs.into(),
+        )?))
+    }
+
+    pub fn run(
+        cipher: Box<dyn StreamCipherX + Send + Sync + 'static>,
+        data: &[u8],
+        is_decrypt: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        ECBArgs::run(cipher, data, is_decrypt)
+    }
+
+    pub fn generate_key(
+        mut kdf: KDFSubArgs,
+        header: &Header,
+        iv_arg: &IVArgs,
+        cs: CBCCSType,
+        block_type: BlockCipherType,
+    ) -> anyhow::Result<(Key, IVector)> {
+        kdf.append_key(Key::from(header.digest()))?;
+        kdf.append_key(Key::from(String::from(cs).into_bytes()))?;
+        let mut iv_kdf = kdf.clone();
+
+        kdf.append_salt(Salt::from(header.file_name()))?;
+        kdf.append_salt(Salt::from(header.digest()))?;
+
+        if iv_arg.is_specified() {
+            let iv: IVector = iv_arg.try_into()?;
+            iv_kdf.append_salt(iv)?;
+        }
+        iv_kdf.append_salt(Salt::from(header.file_name()))?;
+        iv_kdf.append_salt(Salt::from(header.digest()))?;
+
+        kdf.set_ksize(block_type.key_size());
+        iv_kdf.set_ksize(block_type.block_size());
+        Ok((kdf.run()?, iv_kdf.run()?))
+    }
+
+    fn cipher_data(&self, data: &[u8]) -> anyhow::Result<()> {
+        let Some((data, mut header)) = self.common.read_data(data, &self.common.io)? else {
+            return Ok(());
+        };
+
+        let (key, iv) =
+            Self::generate_key(self.kdf.clone(), &header, &self.iv, self.cs, self.r#type)?;
+        let cipher = Self::cs_cipher(self.r#type, self.cs, key, iv)?;
+        let data = Self::run(cipher, data, self.common.decrypt)?;
+
+        if !self.common.decrypt {
+            header.set_info(self.merge_name(&self.r#type.merge_name(&self.kdf)));
+        }
+
+        self.common.write_data(header, &data, &self.common.io)?;
+
+        Ok(())
+    }
+
+    pub fn exe(mut self, pipe: Option<&[u8]>) {
+        self.kdf.prompt_input_password().unwrap();
+        self.common.assert_only_one_datasource(pipe).unwrap();
+
+        if let Some(pipe) = pipe {
+            assert!(
+                pipe.len() > self.r#type.block_size(),
+                "CBC-CS data must great than block size"
+            );
+            self.cipher_data(pipe).unwrap();
+            return;
+        }
+
+        if let Some(msg) = self.common.msg.as_deref() {
+            assert!(
+                msg.as_bytes().len() > self.r#type.block_size(),
+                "CBC-CS data must great than block size"
+            );
+            self.cipher_data(msg.as_bytes()).unwrap();
+            return;
+        }
+
+        self.multiple_thread_to_run();
+    }
+
+    fn multiple_thread_to_run(&self) {
+        let (ios, cpus, header_info) = (
+            self.common.io.clone().decompose().unwrap(),
+            MyConfig::config().threads,
+            self.merge_name(&self.r#type.merge_name(&self.kdf)),
+        );
+
+        if ios.is_empty() {
+            return;
+        }
+        let (common, kdf, cs, block_type, iv, header_info) = (
+            &self.common,
+            &self.kdf,
+            self.cs,
+            self.r#type,
+            &self.iv,
+            header_info.as_str(),
+        );
+
+        thread::scope(|s| {
+            for chunk in ios.chunks(ios.len().div_ceil(cpus)) {
+                s.spawn(move || {
+                    for io_arg in chunk {
+                        let Some((data, mut header)) =
+                            log_error(common.read_from_ioargs(io_arg)).flatten()
+                        else {
+                            continue;
+                        };
+
+                        if data.len() <= block_type.block_size() {
+                            log::error!("the data length must great than the block size `{}` when using the CBC-CS mode", block_type.block_size());
+                            continue;
+                        }
+
+                        if !common.decrypt {
+                            header.set_info(header_info.to_string());
+                        }
+
+                        let Some((key, iv)) =
+                            log_error(Self::generate_key(kdf.clone(), &header, iv, cs, block_type))
+                        else {
+                            continue;
+                        };
+
+                        let Some(cipher) = log_error(Self::cs_cipher(block_type, cs, key, iv))
+                        else {
+                            continue;
+                        };
+
+                        let Some(data) = log_error(Self::run(cipher, &data, common.decrypt)) else {
+                            continue;
+                        };
+
+                        log_error(common.write_data(header, &data, io_arg));
+                    }
+                });
+            }
+        });
     }
 }

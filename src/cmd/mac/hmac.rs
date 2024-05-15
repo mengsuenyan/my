@@ -1,77 +1,65 @@
-use crate::cmd::{Cmd, HashCmd};
-use cipher::{prf::HMAC, MAC};
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use crypto_hash::DigestX;
-use num_bigint::BigUint;
 use std::{io::Write, path::PathBuf};
 
-#[derive(Clone)]
-pub struct HMACCmd;
+use cipher::{prf::HMAC, MAC};
+use clap::Args;
+use crypto_hash::DigestX;
 
-impl Cmd for HMACCmd {
-    const NAME: &'static str = "hmac";
+use crate::cmd::{
+    args::{Key, KeyArgs},
+    hash::HashSubCmd,
+};
 
-    fn cmd() -> Command {
-        Command::new(Self::NAME)
-            .about("HMAC")
-            .arg(
-                Arg::new("msg")
-                    .value_name("MESSAGE")
-                    .action(ArgAction::Set)
-                    .required(false)
-                    .value_parser(value_parser!(String))
-                    .help("the message that need to authentication"),
-            )
-            .arg(
-                Arg::new("file")
-                    .short('f')
-                    .long("file")
-                    .required(false)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("the file that need to authentication"),
-            )
-            .arg(
-                Arg::new("key")
-                    .action(ArgAction::Set)
-                    .short('k')
-                    .long("key")
-                    .required(true)
-                    .value_parser(value_parser!(PathBuf))
-                    .help("key file path"),
-            )
-            .subcommand(HashCmd::cmd())
-            .subcommand_required(true)
-    }
+#[derive(Args)]
+#[command(defer(HashSubCmd::hide_std_args))]
+pub struct HMACArgs {
+    #[arg(value_name = "STRING", allow_hyphen_values = true)]
+    #[arg(help = "hash string")]
+    str: Option<String>,
 
-    fn run(&self, m: &ArgMatches) {
-        let msg = m
-            .get_one::<String>("msg")
-            .map(|x| x.as_bytes().to_vec())
-            .unwrap_or_default();
-        let content = if let Some(p) = m.get_one::<PathBuf>("file") {
-            std::fs::read(p).unwrap()
-        } else {
-            vec![]
-        };
+    #[arg(short = 'f', long = "file")]
+    #[arg(help = "the file path")]
+    file: Option<PathBuf>,
 
-        let mut hmac = self.generate_hmac(m).unwrap();
-        hmac.write_all(&msg).unwrap();
-        hmac.write_all(&content).unwrap();
-        let mac = BigUint::from_bytes_be(hmac.mac().as_slice());
-        println!("{:x}", mac);
-    }
+    #[command(flatten)]
+    key: KeyArgs,
+
+    #[command(subcommand)]
+    h: HashSubCmd,
 }
 
-impl HMACCmd {
-    pub fn generate_hmac(&self, m: &ArgMatches) -> anyhow::Result<HMAC<Box<dyn DigestX>>> {
-        let Some((HashCmd::NAME, hm)) = m.subcommand() else {
-            anyhow::bail!("need to specification hash function")
-        };
+impl HMACArgs {
+    pub fn from_hash_and_key(h: HashSubCmd, key: KeyArgs) -> Self {
+        Self {
+            str: None,
+            file: None,
+            key,
+            h,
+        }
+    }
 
-        let hasher = HashCmd::new(&[]).hasher_cmd(hm).generate_hasher()?;
+    pub fn prf(&self) -> anyhow::Result<HMAC<Box<dyn DigestX>>> {
+        let hasher = self.h.hasher()?;
+        let key: Key = (&self.key).try_into()?;
+        let mac = HMAC::new(hasher, key.as_ref().to_vec())?;
+        Ok(mac)
+    }
 
-        let key = std::fs::read(m.get_one::<PathBuf>("key").unwrap())?;
+    pub fn run(&self, pipe: Option<&[u8]>) -> anyhow::Result<Vec<u8>> {
+        let mut mac = self.prf()?;
 
-        Ok(HMAC::new(hasher, key)?)
+        if let Some(pipe) = pipe {
+            mac.write_all(pipe)?;
+        }
+
+        if let Some(s) = self.str.as_deref() {
+            mac.write_all(s.as_bytes())?;
+        }
+
+        if let Some(f) = self.file.as_deref() {
+            let s = std::fs::read(f)?;
+            mac.write_all(&s)?;
+        }
+
+        Ok(mac.mac())
     }
 }

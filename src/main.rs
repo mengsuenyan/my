@@ -1,9 +1,6 @@
-use clap::{Arg, ArgAction, Command};
+use clap::Parser;
 use log::LevelFilter;
-use my::cmd::{
-    Cmd, CryptoCmd, EncCmd, GitCmd, GroupCmd, HashCmd, KeyCmd, MACCmd, MyFsCmd, PKCSCmd, SignCmd,
-    SkyCmd, TokeiCmd,
-};
+use my::cmd::{self, config::MyConfig, my_name, my_version, MySubCmd};
 use std::io::Read;
 
 fn main() {
@@ -12,55 +9,32 @@ fn main() {
         .parse_default_env()
         .init();
 
-    let version = concat!(env!("MY_VERSION_INFO"), " (", env!("MY_GIT_INFO"), ")");
-    let app = Command::new("my")
-        .version(version)
-        .about("my resource management")
-        .arg(
-            Arg::new("pipe")
-                .long("pipe")
-                .short('p')
-                .action(ArgAction::SetTrue)
-                .required(false),
-        )
-        .subcommand(MyFsCmd::cmd())
-        .subcommand(TokeiCmd::cmd())
-        .subcommand(GitCmd::cmd())
-        .subcommand(EncCmd::cmd())
-        .subcommand(SkyCmd::cmd())
-        .subcommand(HashCmd::cmd())
-        .subcommand(KeyCmd::cmd())
-        .subcommand(SignCmd::cmd())
-        .subcommand(MACCmd::cmd())
-        .subcommand(CryptoCmd::cmd())
-        .subcommand(PKCSCmd::cmd())
-        .subcommand(GroupCmd::cmd())
-        .get_matches();
+    let cli = cmd::MyCli::parse();
 
-    if let Some((s, m)) = app.subcommand() {
-        let mut pdata = Vec::with_capacity(1024);
-        if app.get_flag("pipe") {
-            let _len = std::io::stdin().lock().read_to_end(&mut pdata).unwrap();
-        }
+    MyConfig::config_with_file(cli.config.as_deref());
 
-        match s {
-            MyFsCmd::NAME => MyFsCmd::new().run(m),
-            TokeiCmd::NAME => TokeiCmd::new().run(m),
-            GitCmd::NAME => GitCmd::new().unwrap().run(m),
-            EncCmd::NAME => EncCmd::new(pdata.as_slice()).run(m),
-            SkyCmd::NAME => SkyCmd {}.run(m),
-            HashCmd::NAME => HashCmd::new(pdata.as_slice()).run(m),
-            KeyCmd::NAME => KeyCmd.run(m),
-            SignCmd::NAME => SignCmd.run(m),
-            MACCmd::NAME => MACCmd.run(m),
-            CryptoCmd::NAME => CryptoCmd.run(m),
-            PKCSCmd::NAME => PKCSCmd.run(m),
-            GroupCmd::NAME => GroupCmd.run(m),
-            name => {
-                panic!("unsupport for {}", name)
+    let pipe = cli.pipe.then(|| {
+        let mut buf = MyConfig::tmp_buf();
+        let _len = std::io::stdin().lock().read_to_end(&mut buf).unwrap();
+        buf
+    });
+
+    if let Some(cmd) = cli.comand {
+        match cmd {
+            MySubCmd::Version => {
+                println!("{} {}", my_name(), my_version());
             }
+            MySubCmd::Hash(h) => h.exe(pipe.as_deref()),
+            MySubCmd::Encode(e) => e.exe(pipe.as_deref()),
+            MySubCmd::Git(g) => g.exe(pipe.as_deref()),
+            MySubCmd::KDF(k) => k.exe(pipe.as_deref()),
+            MySubCmd::MAC(m) => m.exe(pipe.as_deref()),
+            MySubCmd::Crypto(c) => c.exe(pipe.as_deref()),
+            MySubCmd::Sign(s) => s.exe(pipe.as_deref()),
+            MySubCmd::Group(g) => g.exe(pipe.as_deref()),
+            MySubCmd::Fs(f) => f.exe(pipe.as_deref()),
         }
     } else {
-        println!("{} {}", env!("CARGO_PKG_NAME"), version);
+        println!("{} {}", my_name(), my_version());
     }
 }

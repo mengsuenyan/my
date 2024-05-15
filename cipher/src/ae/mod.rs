@@ -19,7 +19,20 @@ pub trait AuthenticationCipher {
         associated_data: &[u8],
         in_data: &mut R,
         out_data: &mut W,
-    ) -> Result<(usize, usize), CipherError>;
+    ) -> Result<(usize, usize), CipherError> {
+        self.auth_encrypt_mac(nonce, associated_data, in_data, out_data)
+            .map(|x| (x.0, x.1))
+    }
+
+    /// 相比于auth_encrypt额外输出`mac`
+    /// 返回从`in_data`和`out_data`读入写入数据的字节长度
+    fn auth_encrypt_mac<R: Read, W: Write>(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        in_data: &mut R,
+        out_data: &mut W,
+    ) -> Result<(usize, usize, Vec<u8>), CipherError>;
 
     /// `(nonce, in_data, associated_data) ---认证解密---> out_data` <br>
     /// 返回从`in_data`和`out_data`读入写入数据的字节长度
@@ -41,7 +54,19 @@ pub trait AuthenticationCipherX {
         associated_data: &[u8],
         in_data: &[u8],
         out_data: &mut Vec<u8>,
-    ) -> Result<(usize, usize), CipherError>;
+    ) -> Result<(usize, usize), CipherError> {
+        self.auth_encrypt_mac_x(nonce, associated_data, in_data, out_data)
+            .map(|x| (x.0, x.1))
+    }
+
+    fn auth_encrypt_mac_x(
+        &self,
+        nonce: &[u8],
+        associated_data: &[u8],
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize, Vec<u8>), CipherError>;
+
     fn auth_decrypt_x(
         &self,
         nonce: &[u8],
@@ -59,14 +84,14 @@ where
         self.mac_size()
     }
 
-    fn auth_encrypt_x(
+    fn auth_encrypt_mac_x(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
         mut in_data: &[u8],
         out_data: &mut Vec<u8>,
-    ) -> Result<(usize, usize), CipherError> {
-        self.auth_encrypt(nonce, associated_data, &mut in_data, out_data)
+    ) -> Result<(usize, usize, Vec<u8>), CipherError> {
+        self.auth_encrypt_mac(nonce, associated_data, &mut in_data, out_data)
     }
 
     fn auth_decrypt_x(

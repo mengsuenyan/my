@@ -1,42 +1,65 @@
-use super::{
-    hash::{KMAC128Cmd, KMAC256Cmd, KMACXof128Cmd, KMACXof256Cmd},
-    Cmd,
-};
-use clap::Command;
+use clap::{Args, Subcommand};
+use num_bigint::BigUint;
+use std::io::Write;
 
-#[derive(Clone)]
-pub struct MACCmd;
+use self::cmac::CMACArgs;
+use self::hmac::HMACArgs;
+use super::hash::{HashSubCmd, KMACXofArgs};
 
-mod hmac;
-pub use hmac::HMACCmd;
+pub mod cmac;
+pub mod hmac;
 
-mod cmac;
-pub use cmac::CMACCmd;
+#[derive(Subcommand)]
+pub enum MACSubArgs {
+    #[command(name = "hmac", alias = "HMAC")]
+    #[command(about = "HMAC")]
+    HMAC(HMACArgs),
+    #[command(name = "cmac", alias = "CMAC")]
+    CMAC(CMACArgs),
+    #[command(name = "kmacxof128", alias = "KMACXoF128", about = "KMACXoF128")]
+    KMACXof128(KMACXofArgs),
+    #[command(name = "kmacxof256", alias = "KMACXof256", about = "KMACXof256")]
+    KMACXof256(KMACXofArgs),
+    #[command(name = "kmac128", alias = "KMAC128", about = "KMAC128")]
+    KMAC128(KMACXofArgs),
+    #[command(name = "kmac256", alias = "KMAC256", about = "KMAC256")]
+    KMAC256(KMACXofArgs),
+}
 
-impl Cmd for MACCmd {
-    const NAME: &'static str = "mac";
-    fn cmd() -> clap::Command {
-        Command::new(Self::NAME)
-            .subcommand_required(true)
-            .subcommand(HMACCmd::cmd())
-            .subcommand(KMAC128Cmd::cmd())
-            .subcommand(KMAC256Cmd::cmd())
-            .subcommand(KMACXof128Cmd::cmd())
-            .subcommand(KMACXof256Cmd::cmd())
-            .subcommand(CMACCmd::cmd())
-            .about("Message Authentication Code")
+#[derive(Args)]
+#[command(about = "message authtication code")]
+pub struct MACArgs {
+    #[command(subcommand)]
+    m: MACSubArgs,
+
+    #[arg(long = "0x", help = "display hex format with prefix 0x")]
+    prefix: bool,
+}
+
+impl MACSubArgs {
+    pub fn run(self, pipe: Option<&[u8]>) -> anyhow::Result<Vec<u8>> {
+        let t = [pipe.unwrap_or(&[])];
+        let ipipe = Some(t.iter());
+        match self {
+            MACSubArgs::HMAC(m) => m.run(pipe),
+            MACSubArgs::KMACXof128(a) => Ok(HashSubCmd::KMACXof128(a).run(ipipe)),
+            MACSubArgs::KMACXof256(a) => Ok(HashSubCmd::KMACXof256(a).run(ipipe)),
+            MACSubArgs::KMAC128(a) => Ok(HashSubCmd::KMAC128(a).run(ipipe)),
+            MACSubArgs::KMAC256(a) => Ok(HashSubCmd::KMAC256(a).run(ipipe)),
+            MACSubArgs::CMAC(a) => a.run(pipe),
+        }
     }
+}
 
-    fn run(&self, m: &clap::ArgMatches) {
-        match m.subcommand() {
-            Some((HMACCmd::NAME, m)) => HMACCmd.run(m),
-            Some((KMAC128Cmd::NAME, m)) => KMAC128Cmd::new(&[]).run(m),
-            Some((KMAC256Cmd::NAME, m)) => KMAC256Cmd::new(&[]).run(m),
-            Some((KMACXof128Cmd::NAME, m)) => KMACXof128Cmd::new(&[]).run(m),
-            Some((KMACXof256Cmd::NAME, m)) => KMACXof256Cmd::new(&[]).run(m),
-            Some((CMACCmd::NAME, m)) => CMACCmd.run(m),
-            Some((name, _m)) => panic!("not support the MAC of {name}"),
-            None => unreachable!(),
+impl MACArgs {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        let mac = self.m.run(pipe).unwrap();
+
+        if self.prefix {
+            let m = BigUint::from_bytes_be(&mac);
+            println!("{:#02x}", m);
+        } else {
+            std::io::stdout().lock().write_all(&mac).unwrap()
         }
     }
 }

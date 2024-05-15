@@ -203,10 +203,10 @@ impl Argon2 {
 
         let mut offset = (lane_idx * lane_len + slice_idx * segment_len + idx) as usize;
         while idx < segment_len {
-            let mut prev_idx = offset - 1;
+            let mut prev_idx = offset.wrapping_sub(1);
             if idx == 0 && slice_idx == 0 {
                 // last block in lane
-                prev_idx += lane_len as usize;
+                prev_idx = prev_idx.wrapping_add(lane_len as usize);
             }
 
             let rand_idx = if is_indepent_addr {

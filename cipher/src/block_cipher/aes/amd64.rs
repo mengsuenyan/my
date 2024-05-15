@@ -52,7 +52,9 @@ macro_rules! impl_aes_amd {
                 &self,
                 data: &[u8; Self::BLOCK_SIZE],
             ) -> [u8; Self::BLOCK_SIZE] {
-                let tmp = _mm_loadu_si128(transmute(data.as_ptr()));
+                let tmp = _mm_loadu_si128(
+                    transmute::<*const u8, *const std::arch::x86_64::__m128i>(data.as_ptr()),
+                );
                 let mut tmp = _mm_xor_si128(tmp, self.en_key[0]);
                 self.en_key
                     .iter()
@@ -63,7 +65,10 @@ macro_rules! impl_aes_amd {
                     });
                 tmp = _mm_aesenclast_si128(tmp, self.en_key[Self::NR_EXPAND - 1]);
                 let mut buf = [0u8; Self::BLOCK_SIZE];
-                _mm_storeu_si128(transmute(buf.as_mut_ptr()), tmp);
+                _mm_storeu_si128(
+                    transmute::<*mut u8, *mut std::arch::x86_64::__m128i>(buf.as_mut_ptr()),
+                    tmp,
+                );
                 buf
             }
 
@@ -79,7 +84,9 @@ macro_rules! impl_aes_amd {
                 &self,
                 data: &[u8; Self::BLOCK_SIZE],
             ) -> [u8; Self::BLOCK_SIZE] {
-                let tmp = _mm_loadu_si128(transmute(data.as_ptr()));
+                let tmp = _mm_loadu_si128(
+                    transmute::<*const u8, *const std::arch::x86_64::__m128i>(data.as_ptr()),
+                );
                 let mut tmp = _mm_xor_si128(tmp, self.de_key[0]);
                 self.de_key
                     .iter()
@@ -90,7 +97,10 @@ macro_rules! impl_aes_amd {
                     });
                 tmp = _mm_aesdeclast_si128(tmp, self.de_key[Self::NR_EXPAND - 1]);
                 let mut buf = [0u8; Self::BLOCK_SIZE];
-                _mm_storeu_si128(transmute(buf.as_mut_ptr()), tmp);
+                _mm_storeu_si128(
+                    transmute::<*mut u8, *mut std::arch::x86_64::__m128i>(buf.as_mut_ptr()),
+                    tmp,
+                );
                 buf
             }
 
@@ -124,7 +134,9 @@ impl AES128 {
     #[target_feature(enable = "aes", enable = "sse2")]
     unsafe fn new_encrypt(key: [u8; Self::KEY_SIZE]) -> [__m128i; Self::NR_EXPAND] {
         let mut en_key = [_mm_undefined_si128(); Self::NR_EXPAND];
-        en_key[0] = _mm_loadu_si128(transmute(key.as_ptr()));
+        en_key[0] = _mm_loadu_si128(transmute::<*const u8, *const std::arch::x86_64::__m128i>(
+            key.as_ptr(),
+        ));
         macro_rules! key_expand {
             ($KEY: ident, [$IDX: literal, $IMM: literal]) => {
                 let temp2 = _mm_aeskeygenassist_si128($KEY[$IDX - 1], $IMM);
@@ -158,13 +170,18 @@ impl AES192 {
     #[target_feature(enable = "sse2")]
     #[inline]
     unsafe fn cvt_i2d(temp: *const __m128i) -> __m128d {
-        _mm_load_pd(transmute(temp))
+        _mm_load_pd(transmute::<*const std::arch::x86_64::__m128i, *const f64>(
+            temp,
+        ))
     }
 
     #[target_feature(enable = "sse2")]
     #[inline]
     unsafe fn cvt_d2i(temp: *const __m128d) -> __m128i {
-        _mm_loadu_si128(transmute(temp))
+        _mm_loadu_si128(transmute::<
+            *const std::arch::x86_64::__m128d,
+            *const std::arch::x86_64::__m128i,
+        >(temp))
     }
 
     #[target_feature(enable = "sse2")]
@@ -196,8 +213,12 @@ impl AES192 {
         let key = key1;
 
         let mut en_key = [_mm_undefined_si128(); Self::NR_EXPAND];
-        en_key[0] = _mm_loadu_si128(transmute(key.as_ptr()));
-        let mut temp3 = _mm_loadu_si128(transmute(key.as_ptr().offset(16)));
+        en_key[0] = _mm_loadu_si128(transmute::<*const u8, *const std::arch::x86_64::__m128i>(
+            key.as_ptr(),
+        ));
+        let mut temp3 = _mm_loadu_si128(transmute::<*const u8, *const std::arch::x86_64::__m128i>(
+            key.as_ptr().offset(16),
+        ));
         macro_rules! key_expand {
             ($KEY: ident, $TEMP3: ident, [$IDX: literal, $IMM: literal]) => {
                 let temp2_ = _mm_aeskeygenassist_si128 ($TEMP3, $IMM);
@@ -252,8 +273,12 @@ impl AES256 {
     unsafe fn new_encrypt(key: [u8; Self::KEY_SIZE]) -> [__m128i; Self::NR_EXPAND] {
         let mut en_key = [_mm_undefined_si128(); Self::NR_EXPAND];
 
-        en_key[0] = _mm_loadu_si128(transmute(key.as_ptr()));
-        en_key[1] = _mm_loadu_si128(transmute(key.as_ptr().offset(16)));
+        en_key[0] = _mm_loadu_si128(transmute::<*const u8, *const std::arch::x86_64::__m128i>(
+            key.as_ptr(),
+        ));
+        en_key[1] = _mm_loadu_si128(transmute::<*const u8, *const std::arch::x86_64::__m128i>(
+            key.as_ptr().offset(16),
+        ));
 
         macro_rules! key_expand {
             ($KEY: ident, [$IDX: literal, $IMM: literal]) => {

@@ -154,31 +154,3 @@
 = utils
 
 辅助工具crate
-
-= my
-
-*my*命令:
-- `my fs`: 文件管理命令, 当前支持文件遍历, 类似`ls, tree`命令;
-- `my tokei`: 统计代码, 需要安装tokei, 这里主要是统计之后会修改配置文件代码仓库记录;
-- `my git`: git仓库管理, 仓库信息会记录在配置文件中`~/.config/my`;
-  - `my git clone`: 克隆多个git厂库到指定的目录;
-  - `my git copy/my git mv/my git rm`: 拷贝指定的仓库到指定目录;
-  - `my git open`: 打开仓库记录信息;
-  - `my git reduce`: 移除重复的记录信息;
-  - `my git temp`: 查找有编译缓存文件的仓库;
-  - `my git search`: 搜索指定正则的仓库;
-  - `my git --update`: 更新指定的git仓库;
-- `my enc`: 编码转换, 支持hex, bin, byte, base16, base32, base64, base58;
-- `my h`: 哈希算法, 支持crypto_hash中的hash算法;
-- `my c`: 加密算法, 支持cipher中的加密算法;
-- `my s`: 签名算法, 支持cipher中的签名算法;
-- `my k`: 密钥生成;
-- `my sky`: 自定义的文件加密;
-- `my mac`: 消息认证码;
-- `my p`: 公钥加密;
-- `my g`: 群相关命令;
-
-
-== 环境变量
-
-- `MY_GIT_UPDATE_ITEMS`: 设置`my git --update`每更新成功多个仓库之后, 更新配置文件. 默认是10.

@@ -1,321 +1,428 @@
-use crate::cmd::Cmd;
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use crypto_hash::{blake, sha2, sha3, sm3::SM3, DigestX};
+use std::{io::Write, path::PathBuf};
+
+use clap::{Args, Command, Subcommand};
+use crypto_hash::{
+    blake::{
+        BLAKE2b, BLAKE2b128, BLAKE2b224, BLAKE2b256, BLAKE2b384, BLAKE2b512, BLAKE2s, BLAKE2s128,
+        BLAKE2s224, BLAKE2s256,
+    },
+    cshake::{KMACXof128, KMACXof256, CSHAKE128, CSHAKE256, KMAC128, KMAC256},
+    sha2::{self, SHA1},
+    sha3,
+    sm3::SM3,
+    Digest, DigestX,
+};
 use num_bigint::BigUint;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
 
-pub trait HasherCmd {
-    fn generate_hasher(&self, m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>>;
+use super::args::{Key, KeyArgs};
 
-    fn run(&self, m: &ArgMatches);
+#[derive(Args)]
+#[command(name = "h")]
+#[command(about = "crypto hash command, hash(PIPE | STRING | file)")]
+pub struct HashCmd {
+    #[command(subcommand)]
+    hfn: HashSubCmd,
+
+    #[arg(long = "0x")]
+    #[arg(help = "display hex format with prefix 0x")]
+    prefix: bool,
 }
 
-fn common_cmd(name: &str) -> Command {
-    Command::new(name.to_string())
-        .arg(
-            Arg::new("str")
-                .value_name("STRING")
-                .action(ArgAction::Set)
-                .value_parser(value_parser!(String))
-                .required(false)
-                .help("hash string"),
-        )
-        .arg(
-            Arg::new("file")
-                .short('f')
-                .long("file")
-                .action(ArgAction::Set)
-                .value_parser(value_parser!(PathBuf))
-                .required(false)
-                .help("to specified the file path"),
-        )
-        .arg(
-            Arg::new("prefix")
-                .long("prefix")
-                .required(false)
-                .action(ArgAction::SetTrue)
-                .help("display prefix with `0x`"),
-        )
+#[derive(Subcommand, Clone)]
+pub enum HashSubCmd {
+    #[command(name = "sm3", alias = "SM3", about = "SM3")]
+    SM3(StandardArgs),
+    #[command(name = "s1", alias = "SHA1", about = "SHA1")]
+    SHA1(StandardArgs),
+    #[command(name = "s2-224", alias = "SHA2-224", about = "SHA2-224")]
+    SHA2_224(StandardArgs),
+    #[command(name = "s2-256", alias = "SHA2-256", about = "SHA2-256")]
+    SHA2_256(StandardArgs),
+    #[command(name = "s2-384", alias = "SHA2-384", about = "SHA2-384")]
+    SHA2_384(StandardArgs),
+    #[command(name = "s2-512", alias = "SHA2-512", about = "SHA2-512")]
+    SHA2_512(StandardArgs),
+    #[command(name = "s2-512t224", alias = "SHA2-512T224", about = "SHA2-512T224")]
+    SHA2_512T224(StandardArgs),
+    #[command(name = "s2-512t256", alias = "SHA2-512T256", about = "SHA2-512T256")]
+    SHA2_512T256(StandardArgs),
+    #[command(name = "s2-512t", alias = "SHA2-512t", about = "SHA2-512t")]
+    SHA2_512T(XofArgs),
+    #[command(name = "s3-224", alias = "SHA3-224", about = "SHA3-224")]
+    SHA3_224(StandardArgs),
+    #[command(name = "s3-256", alias = "SHA3-256", about = "SHA3-256")]
+    SHA3_256(StandardArgs),
+    #[command(name = "s3-384", alias = "SHA3-384", about = "SHA3-384")]
+    SHA3_384(StandardArgs),
+    #[command(name = "s3-512", alias = "SHA3-512", about = "SHA3-512")]
+    SHA3_512(StandardArgs),
+    #[command(name = "shake128", alias = "SHAKE128", about = "SHAKE128")]
+    SHAKE128(XofArgs),
+    #[command(name = "shake256", alias = "SHAKE256", about = "SHAKE256")]
+    SHAKE256(XofArgs),
+    #[command(name = "rshake128", alias = "RawSHAKE128", about = "RawSHAKE128")]
+    RawSHAKE128(XofArgs),
+    #[command(name = "rshake256", alias = "RawSHAKE256", about = "RawSHAKE256")]
+    RawSHAKE256(XofArgs),
+    #[command(name = "cshake128", alias = "CSHAKE128", about = "CSHAKE128")]
+    CSHAKE128(CShakeArgs),
+    #[command(name = "cshake256", alias = "CSHAKE256", about = "CSHAKE256")]
+    CSHAKE256(CShakeArgs),
+    #[command(name = "kmacxof128", alias = "KMACXoF128", about = "KMACXoF128")]
+    KMACXof128(KMACXofArgs),
+    #[command(name = "kmacxof256", alias = "KMACXof256", about = "KMACXof256")]
+    KMACXof256(KMACXofArgs),
+    #[command(name = "kmac128", alias = "KMAC128", about = "KMAC128")]
+    KMAC128(KMACXofArgs),
+    #[command(name = "kmac256", alias = "KMAC256", about = "KMAC256")]
+    KMAC256(KMACXofArgs),
+    #[command(name = "bb128", alias = "BLAKE2b128", about = "BLAKE2b128")]
+    BLAKE2b128(StandardArgs),
+    #[command(name = "bb224", alias = "BLAKE2b224", about = "BLAKE2b224")]
+    BLAKE2b224(StandardArgs),
+    #[command(name = "bb256", alias = "BLAKE2b256", about = "BLAKE2b256")]
+    BLAKE2b256(StandardArgs),
+    #[command(name = "bb384", alias = "BLAKE2b384", about = "BLAKE2b384")]
+    BLAKE2b384(StandardArgs),
+    #[command(name = "bb512", alias = "BLAKE2b512", about = "BLAKE2b512")]
+    BLAKE2b512(StandardArgs),
+    #[command(name = "bs128", alias = "BLAKE2s128", about = "BLAKE2s128")]
+    BLAKE2s128(StandardArgs),
+    #[command(name = "bs224", alias = "BLAKE2s224", about = "BLAKE2s224")]
+    BLAKE2s224(StandardArgs),
+    #[command(name = "bs256", alias = "BLAKE2s256", about = "BLAKE2s256")]
+    BLAKE2s256(StandardArgs),
+    #[command(name = "blake2b", alias = "BLAKE2b", about = "BLAKE2b")]
+    BLAKE2b(XofArgs),
+    #[command(name = "blake2s", alias = "BLAKE2s", about = "BLAKE2s")]
+    BLAKE2s(XofArgs),
 }
 
-fn common_run<T: DigestX>(mut h: T, pipe: &[u8], m: &ArgMatches) -> Vec<u8> {
-    h.write_all(pipe).unwrap();
+#[derive(Args, Clone, Default)]
+pub struct StandardArgs {
+    #[arg(value_name = "STRING", allow_hyphen_values = true)]
+    #[arg(help = "hash string")]
+    str: Option<String>,
 
-    if let Some(x) = m.get_one::<String>("str") {
-        h.write_all(x.as_bytes()).unwrap();
-    }
-
-    if let Some(f) = m.get_one::<PathBuf>("file") {
-        assert!(f.exists(), "{} is not exist", f.display());
-        assert!(f.is_file(), "{} is not a file", f.display());
-        let mut f = File::open(f).unwrap();
-        let mut v = Vec::new();
-        let _len = f.read_to_end(&mut v).unwrap();
-        h.write_all(v.as_slice()).unwrap();
-    }
-
-    h.finish_x()
+    #[arg(short = 'f', long = "file")]
+    #[arg(help = "the file path")]
+    file: Option<PathBuf>,
 }
 
-macro_rules! impl_hash_cmd {
-    ($NAME1: ident, $($NAME2: ident),+) => {
-        impl_hash_cmd!($NAME1);
-        impl_hash_cmd!($($NAME2),+);
-    };
-    ($NAME: ident) => {
-        #[derive(Default)]
-        pub struct $NAME {
-            pipe: Vec<u8>,
-        }
+#[derive(Args, Clone)]
+pub struct XofArgs {
+    #[command(flatten)]
+    std: StandardArgs,
 
-        impl $NAME {
-            pub fn new(pipe: &[u8]) -> Self {
-                Self {
-                    pipe: pipe.to_vec(),
-                }
+    #[arg(short, long)]
+    #[arg(help = "the extended output function digest byte size")]
+    size: usize,
+}
+
+#[derive(Args, Clone)]
+pub struct CShakeArgs {
+    #[command(flatten)]
+    xof: XofArgs,
+
+    #[arg(long)]
+    #[arg(help = "nthe algorithm function name based on the cSHAKE")]
+    fname: Option<String>,
+
+    #[arg(long)]
+    #[arg(help = "custom string")]
+    cstr: Option<String>,
+}
+
+#[derive(Args, Clone)]
+pub struct KMACXofArgs {
+    #[command(flatten)]
+    xof: XofArgs,
+
+    #[command(flatten)]
+    key: KeyArgs,
+
+    #[arg(long)]
+    #[arg(help = "custom string")]
+    cstr: Option<String>,
+}
+
+impl StandardArgs {
+    fn run<T: DigestX, M: AsRef<[u8]>, I: Iterator<Item = M>>(
+        self,
+        mut h: T,
+        pipe: Option<I>,
+    ) -> Vec<u8> {
+        let file = self.file.map(|f| {
+            assert!(f.exists(), "{} is not exist", f.display());
+            assert!(f.is_file(), "{} is not a file", f.display());
+            f
+        });
+
+        if let Some(p) = pipe {
+            for d in p {
+                h.write_all(d.as_ref()).unwrap();
             }
         }
-    };
-}
 
-impl_hash_cmd!(
-    HashCmd,
-    SM3Cmd,
-    SHA1Cmd,
-    SHA2_224Cmd,
-    SHA2_256Cmd,
-    SHA2_384Cmd,
-    SHA2_512Cmd,
-    SHA2_512t224Cmd,
-    SHA2_512t256Cmd,
-    SHA2_512tCmd,
-    SHA3_224Cmd,
-    SHA3_256Cmd,
-    SHA3_384Cmd,
-    SHA3_512Cmd,
-    SHAKE128Cmd,
-    SHAKE256Cmd,
-    RawSHAKE128Cmd,
-    RawSHAKE256Cmd,
-    CSHAKE128Cmd,
-    CSHAKE256Cmd,
-    KMACXof128Cmd,
-    KMACXof256Cmd,
-    KMAC128Cmd,
-    KMAC256Cmd,
-    BLAKE2b128Cmd,
-    BLAKE2b224Cmd,
-    BLAKE2b256Cmd,
-    BLAKE2b384Cmd,
-    BLAKE2b512Cmd,
-    BLAKE2s128Cmd,
-    BLAKE2s224Cmd,
-    BLAKE2s256Cmd,
-    BLAKE2bCmd,
-    BLAKE2sCmd
-);
-
-macro_rules! impl_cmd_for_hashcmd {
-    ([$TYPE1: ty, $HASH1: ty, $NAME1: literal], $([$TYPE2: ty, $HASH2: ty, $NAME2: literal]),+) => {
-        impl_cmd_for_hashcmd!([$TYPE1, $HASH1, $NAME1]);
-        impl_cmd_for_hashcmd!($([$TYPE2, $HASH2, $NAME2]),+);
-    };
-    ([$TYPE: ty, $HASH: ty, $NAME: literal]) => {
-        impl Cmd for $TYPE{
-            const NAME: &'static str = $NAME;
-            fn cmd() -> Command {
-                common_cmd(Self::NAME)
-                .about(stringify!($HASH))
-            }
-
-            fn run(&self, m: &ArgMatches) {
-                let h = self.generate_hasher(m).unwrap();
-                let d = common_run(h, self.pipe.as_slice(), m);
-                let d = BigUint::from_bytes_be(d.as_slice());
-                if m.get_flag("prefix") {
-                    println!("{:#02x}", d);
-                } else {
-                    println!("{:02x}", d);
-                }
-            }
+        if let Some(s) = self.str {
+            h.write_all(s.as_bytes()).unwrap();
         }
 
-        impl HasherCmd for $TYPE {
-            fn generate_hasher(&self, _m: &ArgMatches) -> anyhow::Result<Box<dyn DigestX>> {
-                Ok(Box::new(<$HASH>::new()))
-            }
-
-            fn run(&self, m: &ArgMatches) {
-                Cmd::run(self, m)
-            }
+        if let Some(f) = file {
+            let data = std::fs::read(f).unwrap();
+            h.write_all(data.as_slice()).unwrap();
         }
-    };
-}
 
-impl_cmd_for_hashcmd!(
-    [SM3Cmd, SM3, "sm3"],
-    [SHA1Cmd, sha2::SHA1, "s1"],
-    [SHA2_224Cmd, sha2::SHA224, "s2-224"],
-    [SHA2_256Cmd, sha2::SHA256, "s2-256"],
-    [SHA2_384Cmd, sha2::SHA384, "s2-384"],
-    [SHA2_512Cmd, sha2::SHA512, "s2-512"],
-    [SHA2_512t224Cmd, sha2::SHA512T224, "s2-t-224"],
-    [SHA2_512t256Cmd, sha2::SHA512T256, "s2-t-256"],
-    [SHA3_224Cmd, sha3::SHA224, "s3-224"],
-    [SHA3_256Cmd, sha3::SHA256, "s3-256"],
-    [SHA3_384Cmd, sha3::SHA384, "s3-384"],
-    [SHA3_512Cmd, sha3::SHA512, "s3-512"],
-    [BLAKE2b128Cmd, blake::BLAKE2b128, "bb128"],
-    [BLAKE2b224Cmd, blake::BLAKE2b224, "bb224"],
-    [BLAKE2b256Cmd, blake::BLAKE2b256, "bb256"],
-    [BLAKE2b384Cmd, blake::BLAKE2b384, "bb384"],
-    [BLAKE2b512Cmd, blake::BLAKE2b512, "bb512"],
-    [BLAKE2s128Cmd, blake::BLAKE2s128, "bs128"],
-    [BLAKE2s224Cmd, blake::BLAKE2s224, "bs224"],
-    [BLAKE2s256Cmd, blake::BLAKE2s256, "bs256"]
-);
-
-mod blake_cmd;
-mod cshake_cmd;
-mod sha_cmd;
-
-impl Cmd for HashCmd {
-    const NAME: &'static str = "h";
-
-    fn cmd() -> Command {
-        Command::new(Self::NAME)
-            .about("hash command")
-            .subcommand(SM3Cmd::cmd())
-            .subcommand(SHA1Cmd::cmd())
-            .subcommand(SHA2_224Cmd::cmd())
-            .subcommand(SHA2_256Cmd::cmd())
-            .subcommand(SHA2_384Cmd::cmd())
-            .subcommand(SHA2_512Cmd::cmd())
-            .subcommand(SHA2_512t224Cmd::cmd())
-            .subcommand(SHA2_512t256Cmd::cmd())
-            .subcommand(SHA2_512tCmd::cmd())
-            .subcommand(SHA2_512tCmd::cmd())
-            .subcommand(SHA3_224Cmd::cmd())
-            .subcommand(SHA3_256Cmd::cmd())
-            .subcommand(SHA3_384Cmd::cmd())
-            .subcommand(SHA3_512Cmd::cmd())
-            .subcommand(SHAKE128Cmd::cmd())
-            .subcommand(SHAKE256Cmd::cmd())
-            .subcommand(RawSHAKE128Cmd::cmd())
-            .subcommand(RawSHAKE256Cmd::cmd())
-            .subcommand(CSHAKE128Cmd::cmd())
-            .subcommand(CSHAKE256Cmd::cmd())
-            .subcommand(KMACXof128Cmd::cmd())
-            .subcommand(KMACXof256Cmd::cmd())
-            .subcommand(KMAC128Cmd::cmd())
-            .subcommand(KMAC256Cmd::cmd())
-            .subcommand(BLAKE2b128Cmd::cmd())
-            .subcommand(BLAKE2b224Cmd::cmd())
-            .subcommand(BLAKE2b256Cmd::cmd())
-            .subcommand(BLAKE2b384Cmd::cmd())
-            .subcommand(BLAKE2b512Cmd::cmd())
-            .subcommand(BLAKE2s128Cmd::cmd())
-            .subcommand(BLAKE2s224Cmd::cmd())
-            .subcommand(BLAKE2s256Cmd::cmd())
-            .subcommand(BLAKE2bCmd::cmd())
-            .subcommand(BLAKE2sCmd::cmd())
-            .subcommand_required(true)
-    }
-
-    fn run(&self, m: &ArgMatches) {
-        self.hasher_cmd(m).run();
+        h.finish_x()
     }
 }
 
-pub struct DynHasherCmd<'a> {
-    h: Box<dyn HasherCmd>,
-    m: &'a ArgMatches,
-}
-
-impl<'a> DynHasherCmd<'a> {
-    fn run(&'a self) {
-        self.h.run(self.m);
+impl HashSubCmd {
+    pub fn run<T: AsRef<[u8]>, I: Iterator<Item = T>>(self, pipe: Option<I>) -> Vec<u8> {
+        match self {
+            HashSubCmd::SM3(args) => args.run(SM3::new(), pipe),
+            HashSubCmd::SHA1(args) => args.run(SHA1::new(), pipe),
+            HashSubCmd::SHA2_224(args) => args.run(sha2::SHA224::new(), pipe),
+            HashSubCmd::SHA2_256(args) => args.run(sha2::SHA256::new(), pipe),
+            HashSubCmd::SHA2_384(args) => args.run(sha2::SHA384::new(), pipe),
+            HashSubCmd::SHA2_512(args) => args.run(sha2::SHA512::new(), pipe),
+            HashSubCmd::SHA2_512T224(args) => args.run(sha2::SHA512T224::new(), pipe),
+            HashSubCmd::SHA2_512T256(args) => args.run(sha2::SHA512T256::new(), pipe),
+            HashSubCmd::SHA2_512T(args) => args
+                .std
+                .run(sha2::SHA512tInner::new(args.size).unwrap(), pipe),
+            HashSubCmd::SHA3_224(args) => args.run(sha3::SHA224::new(), pipe),
+            HashSubCmd::SHA3_256(args) => args.run(sha3::SHA256::new(), pipe),
+            HashSubCmd::SHA3_384(args) => args.run(sha3::SHA384::new(), pipe),
+            HashSubCmd::SHA3_512(args) => args.run(sha3::SHA512::new(), pipe),
+            HashSubCmd::SHAKE128(args) => args.std.run(sha3::SHAKE128::new(args.size), pipe),
+            HashSubCmd::SHAKE256(args) => args.std.run(sha3::SHAKE256::new(args.size), pipe),
+            HashSubCmd::RawSHAKE128(args) => args.std.run(sha3::RawSHAKE128::new(args.size), pipe),
+            HashSubCmd::RawSHAKE256(args) => args.std.run(sha3::RawSHAKE256::new(args.size), pipe),
+            HashSubCmd::CSHAKE128(args) => args.xof.std.run(
+                CSHAKE128::new(
+                    args.xof.size,
+                    args.fname.unwrap_or_default().as_bytes(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::CSHAKE256(args) => args.xof.std.run(
+                CSHAKE256::new(
+                    args.xof.size,
+                    args.fname.unwrap_or_default().as_bytes(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::KMACXof128(args) => args.xof.std.run(
+                KMACXof128::new(
+                    args.xof.size,
+                    Key::try_from(args.key).unwrap().as_ref(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::KMACXof256(args) => args.xof.std.run(
+                KMACXof256::new(
+                    args.xof.size,
+                    Key::try_from(args.key).unwrap().as_ref(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::KMAC128(args) => args.xof.std.run(
+                KMAC128::new(
+                    args.xof.size,
+                    Key::try_from(args.key).unwrap().as_ref(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::KMAC256(args) => args.xof.std.run(
+                KMAC256::new(
+                    args.xof.size,
+                    Key::try_from(args.key).unwrap().as_ref(),
+                    args.cstr.unwrap_or_default().as_bytes(),
+                )
+                .unwrap(),
+                pipe,
+            ),
+            HashSubCmd::BLAKE2b128(args) => args.run(BLAKE2b128::new(), pipe),
+            HashSubCmd::BLAKE2b224(args) => args.run(BLAKE2b224::new(), pipe),
+            HashSubCmd::BLAKE2b256(args) => args.run(BLAKE2b256::new(), pipe),
+            HashSubCmd::BLAKE2b384(args) => args.run(BLAKE2b384::new(), pipe),
+            HashSubCmd::BLAKE2b512(args) => args.run(BLAKE2b512::new(), pipe),
+            HashSubCmd::BLAKE2s128(args) => args.run(BLAKE2s128::new(), pipe),
+            HashSubCmd::BLAKE2s224(args) => args.run(BLAKE2s224::new(), pipe),
+            HashSubCmd::BLAKE2s256(args) => args.run(BLAKE2s256::new(), pipe),
+            HashSubCmd::BLAKE2b(args) => args.std.run(BLAKE2b::new(args.size as u8).unwrap(), pipe),
+            HashSubCmd::BLAKE2s(args) => args.std.run(BLAKE2s::new(args.size as u8).unwrap(), pipe),
+        }
     }
 
-    fn new(h: Box<dyn HasherCmd>, m: &'a ArgMatches) -> Self {
-        Self { h, m }
+    pub fn hasher(&self) -> anyhow::Result<Box<dyn DigestX>> {
+        Ok(match self {
+            HashSubCmd::SM3(_) => Box::new(SM3::new()),
+            HashSubCmd::SHA1(_) => Box::new(SHA1::new()),
+            HashSubCmd::SHA2_224(_) => Box::new(sha2::SHA224::new()),
+            HashSubCmd::SHA2_256(_) => Box::new(sha2::SHA256::new()),
+            HashSubCmd::SHA2_384(_) => Box::new(sha2::SHA384::new()),
+            HashSubCmd::SHA2_512(_) => Box::new(sha2::SHA512::new()),
+            HashSubCmd::SHA2_512T224(_) => Box::new(sha2::SHA512T224::new()),
+            HashSubCmd::SHA2_512T256(_) => Box::new(sha2::SHA512T256::new()),
+            HashSubCmd::SHA2_512T(args) => Box::new(sha2::SHA512tInner::new(args.size)?),
+            HashSubCmd::SHA3_224(_) => Box::new(sha3::SHA224::new()),
+            HashSubCmd::SHA3_256(_) => Box::new(sha3::SHA256::new()),
+            HashSubCmd::SHA3_384(_) => Box::new(sha3::SHA384::new()),
+            HashSubCmd::SHA3_512(_) => Box::new(sha3::SHA512::new()),
+            HashSubCmd::SHAKE128(args) => Box::new(sha3::SHAKE128::new(args.size)),
+            HashSubCmd::SHAKE256(args) => Box::new(sha3::SHAKE256::new(args.size)),
+            HashSubCmd::RawSHAKE128(args) => Box::new(sha3::RawSHAKE128::new(args.size)),
+            HashSubCmd::RawSHAKE256(args) => Box::new(sha3::RawSHAKE256::new(args.size)),
+            HashSubCmd::CSHAKE128(args) => Box::new(CSHAKE128::new(
+                args.xof.size,
+                args.fname
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::CSHAKE256(args) => Box::new(CSHAKE256::new(
+                args.xof.size,
+                args.fname
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::KMACXof128(args) => Box::new(KMACXof128::new(
+                args.xof.size,
+                Key::try_from(&args.key).unwrap().as_ref(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::KMACXof256(args) => Box::new(KMACXof256::new(
+                args.xof.size,
+                Key::try_from(&args.key).unwrap().as_ref(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::KMAC128(args) => Box::new(KMAC128::new(
+                args.xof.size,
+                Key::try_from(&args.key).unwrap().as_ref(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::KMAC256(args) => Box::new(KMAC256::new(
+                args.xof.size,
+                Key::try_from(&args.key).unwrap().as_ref(),
+                args.cstr
+                    .as_deref()
+                    .map(|x| x.as_bytes())
+                    .unwrap_or_default(),
+            )?),
+            HashSubCmd::BLAKE2b128(_) => Box::new(BLAKE2b128::new()),
+            HashSubCmd::BLAKE2b224(_) => Box::new(BLAKE2b224::new()),
+            HashSubCmd::BLAKE2b256(_) => Box::new(BLAKE2b256::new()),
+            HashSubCmd::BLAKE2b384(_) => Box::new(BLAKE2b384::new()),
+            HashSubCmd::BLAKE2b512(_) => Box::new(BLAKE2b512::new()),
+            HashSubCmd::BLAKE2s128(_) => Box::new(BLAKE2s128::new()),
+            HashSubCmd::BLAKE2s224(_) => Box::new(BLAKE2s224::new()),
+            HashSubCmd::BLAKE2s256(_) => Box::new(BLAKE2s256::new()),
+            HashSubCmd::BLAKE2b(args) => Box::new(BLAKE2b::new(u8::try_from(args.size)?)?),
+            HashSubCmd::BLAKE2s(args) => Box::new(BLAKE2s::new(u8::try_from(args.size)?)?),
+        })
     }
 
-    pub fn generate_hasher(&self) -> anyhow::Result<Box<dyn DigestX>> {
-        self.h.generate_hasher(self.m)
+    /// digest byte size
+    pub fn digest_size(&self) -> usize {
+        match self {
+            HashSubCmd::SM3(_) => SM3::DIGEST_BITS >> 3,
+            HashSubCmd::SHA1(_) => SHA1::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_224(_) => sha2::SHA224::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_256(_) => sha2::SHA256::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_384(_) => sha2::SHA384::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_512(_) => sha2::SHA512::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_512T224(_) => sha2::SHA512T224::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_512T256(_) => sha2::SHA512T256::DIGEST_BITS >> 3,
+            HashSubCmd::SHA2_512T(a) => a.size,
+            HashSubCmd::SHA3_224(_) => sha3::SHA224::DIGEST_BITS >> 3,
+            HashSubCmd::SHA3_256(_) => sha3::SHA256::DIGEST_BITS >> 3,
+            HashSubCmd::SHA3_384(_) => sha3::SHA384::DIGEST_BITS >> 3,
+            HashSubCmd::SHA3_512(_) => sha3::SHA512::DIGEST_BITS >> 3,
+            HashSubCmd::SHAKE128(a) => a.size,
+            HashSubCmd::SHAKE256(a) => a.size,
+            HashSubCmd::RawSHAKE128(a) => a.size,
+            HashSubCmd::RawSHAKE256(a) => a.size,
+            HashSubCmd::CSHAKE128(a) => a.xof.size,
+            HashSubCmd::CSHAKE256(a) => a.xof.size,
+            HashSubCmd::KMACXof128(a) => a.xof.size,
+            HashSubCmd::KMACXof256(a) => a.xof.size,
+            HashSubCmd::KMAC128(a) => a.xof.size,
+            HashSubCmd::KMAC256(a) => a.xof.size,
+            HashSubCmd::BLAKE2b128(_) => BLAKE2b128::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2b224(_) => BLAKE2b128::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2b256(_) => BLAKE2b256::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2b384(_) => BLAKE2b384::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2b512(_) => BLAKE2b512::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2s128(_) => BLAKE2s128::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2s224(_) => BLAKE2s224::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2s256(_) => BLAKE2s256::DIGEST_BITS >> 3,
+            HashSubCmd::BLAKE2b(a) => a.size,
+            HashSubCmd::BLAKE2s(a) => a.size,
+        }
+    }
+
+    pub(super) fn hide_std_args(mut c: Command) -> Command {
+        let names = c
+            .get_subcommands()
+            .map(|c| c.get_name().to_string())
+            .collect::<Vec<_>>();
+
+        for name in names {
+            c = c.mut_subcommand(name, |a| {
+                a.mut_arg("str", |a| a.hide(true))
+                    .mut_arg("file", |a| a.hide(true))
+            });
+        }
+
+        c
     }
 }
 
 impl HashCmd {
-    pub fn hasher_cmd<'a>(&self, m: &'a ArgMatches) -> DynHasherCmd<'a> {
-        let (h, m): (Box<dyn HasherCmd>, &'a ArgMatches) = match m.subcommand() {
-            Some((SM3Cmd::NAME, m)) => (Box::new(SM3Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA1Cmd::NAME, m)) => (Box::new(SHA1Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA2_224Cmd::NAME, m)) => (Box::new(SHA2_224Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA2_256Cmd::NAME, m)) => (Box::new(SHA2_256Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA2_384Cmd::NAME, m)) => (Box::new(SHA2_384Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA2_512Cmd::NAME, m)) => (Box::new(SHA2_512Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA2_512t224Cmd::NAME, m)) => {
-                (Box::new(SHA2_512t224Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((SHA2_512t256Cmd::NAME, m)) => {
-                (Box::new(SHA2_512t256Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((SHA2_512tCmd::NAME, m)) => (Box::new(SHA2_512tCmd::new(self.pipe.as_slice())), m),
-            Some((SHA3_224Cmd::NAME, m)) => (Box::new(SHA3_224Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA3_256Cmd::NAME, m)) => (Box::new(SHA3_256Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA3_384Cmd::NAME, m)) => (Box::new(SHA3_384Cmd::new(self.pipe.as_slice())), m),
-            Some((SHA3_512Cmd::NAME, m)) => (Box::new(SHA3_512Cmd::new(self.pipe.as_slice())), m),
-            Some((SHAKE128Cmd::NAME, m)) => (Box::new(SHAKE128Cmd::new(self.pipe.as_slice())), m),
-            Some((SHAKE256Cmd::NAME, m)) => (Box::new(SHAKE256Cmd::new(self.pipe.as_slice())), m),
-            Some((RawSHAKE128Cmd::NAME, m)) => {
-                (Box::new(RawSHAKE128Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((RawSHAKE256Cmd::NAME, m)) => {
-                (Box::new(RawSHAKE256Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((CSHAKE128Cmd::NAME, m)) => (Box::new(CSHAKE128Cmd::new(self.pipe.as_slice())), m),
-            Some((CSHAKE256Cmd::NAME, m)) => (Box::new(CSHAKE256Cmd::new(self.pipe.as_slice())), m),
-            Some((KMACXof128Cmd::NAME, m)) => {
-                (Box::new(KMACXof128Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((KMACXof256Cmd::NAME, m)) => {
-                (Box::new(KMACXof256Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((KMAC128Cmd::NAME, m)) => (Box::new(KMAC128Cmd::new(self.pipe.as_slice())), m),
-            Some((KMAC256Cmd::NAME, m)) => (Box::new(KMAC256Cmd::new(self.pipe.as_slice())), m),
-            Some((BLAKE2b128Cmd::NAME, m)) => {
-                (Box::new(BLAKE2b128Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2b224Cmd::NAME, m)) => {
-                (Box::new(BLAKE2b224Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2b256Cmd::NAME, m)) => {
-                (Box::new(BLAKE2b256Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2b384Cmd::NAME, m)) => {
-                (Box::new(BLAKE2b384Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2b512Cmd::NAME, m)) => {
-                (Box::new(BLAKE2b512Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2s128Cmd::NAME, m)) => {
-                (Box::new(BLAKE2s128Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2s224Cmd::NAME, m)) => {
-                (Box::new(BLAKE2s224Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2s256Cmd::NAME, m)) => {
-                (Box::new(BLAKE2s256Cmd::new(self.pipe.as_slice())), m)
-            }
-            Some((BLAKE2bCmd::NAME, m)) => (Box::new(BLAKE2bCmd::new(self.pipe.as_slice())), m),
-            Some((BLAKE2sCmd::NAME, m)) => (Box::new(BLAKE2sCmd::new(self.pipe.as_slice())), m),
-            Some((other, _m)) => panic!("not support the {other} hash algorithm"),
-            None => panic!("need to specified the hash algorithm"),
-        };
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        let is_prefix = self.prefix;
 
-        DynHasherCmd::new(h, m)
+        let digest = self.run(pipe);
+        if is_prefix {
+            let d = BigUint::from_bytes_be(digest.as_slice());
+            println!("{:#02x}", d);
+        } else {
+            std::io::stdout().lock().write_all(&digest).unwrap();
+        }
+    }
+
+    pub fn run(self, pipe: Option<&[u8]>) -> Vec<u8> {
+        let t = [pipe.unwrap_or(&[])];
+        self.hfn.run(Some(t.iter()))
     }
 }

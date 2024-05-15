@@ -1,26 +1,24 @@
-use crate::cmd::Cmd;
-use clap::{ArgMatches, Command};
-
 mod rsa;
-use rsa::RSACmd;
 
-pub struct SignCmd;
+use clap::{Args, Subcommand};
+pub use rsa::RsaArgs;
 
-impl Cmd for SignCmd {
-    const NAME: &'static str = "s";
+#[derive(Args)]
+#[command(about = "signer")]
+pub struct SignArgs {
+    #[command(subcommand)]
+    signer: SignSubArgs,
+}
 
-    fn cmd() -> Command {
-        Command::new(Self::NAME)
-            .about("signer")
-            .subcommand(RSACmd::cmd())
-            .subcommand_required(true)
-    }
+#[derive(Subcommand)]
+pub enum SignSubArgs {
+    Rsa(rsa::RsaArgs),
+}
 
-    fn run(&self, m: &ArgMatches) {
-        match m.subcommand() {
-            Some((RSACmd::NAME, m)) => RSACmd.run(m),
-            Some((name, _m)) => panic!("not support the {name} cmd"),
-            None => panic!("need to specify the sign subcommand"),
+impl SignArgs {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        match self.signer {
+            SignSubArgs::Rsa(a) => a.exe(pipe),
         }
     }
 }

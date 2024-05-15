@@ -1,73 +1,56 @@
-use anyhow::Result;
-use cipher::{mac::CMAC, MAC};
-use std::{io::Write, path::PathBuf, thread::scope};
+use crate::cmd::args::Key;
+use crate::cmd::crypto::block::BlockCipherType;
+use crate::cmd::kdf::KDFSubArgs;
+use cipher::mac::CMAC;
+use cipher::MAC;
+use clap::Args;
+use std::io::Write;
+use std::path::PathBuf;
 
-use crate::cmd::{crypto::mode, Cmd};
+#[derive(Args)]
+#[command(defer(KDFSubArgs::for_crypto_args))]
+#[command(about = "CMAC(NIST SP 800-38B)")]
+pub struct CMACArgs {
+    #[arg(value_name = "STRING", allow_hyphen_values = true)]
+    #[arg(help = "hash string")]
+    str: Option<String>,
 
-#[derive(Clone)]
-pub struct CMACCmd;
+    #[arg(short = 'f', long = "file")]
+    #[arg(help = "the file path")]
+    file: Option<PathBuf>,
 
-impl Cmd for CMACCmd {
-    const NAME: &'static str = "cmac";
-    fn cmd() -> clap::Command {
-        mode::common_command(Self::NAME)
+    #[arg(short = 't', long = "type", default_value = "aes128")]
+    block_type: BlockCipherType,
+
+    #[command(subcommand)]
+    kdf: KDFSubArgs,
+}
+
+impl CMACArgs {
+    pub fn cmac(&self, key: Key) -> anyhow::Result<Box<dyn MAC + Send + Sync + 'static>> {
+        let block_cipher = self.block_type.block_cipher(key)?;
+        Ok(Box::new(CMAC::new(block_cipher)?))
     }
-    fn run(&self, m: &clap::ArgMatches) {
-        let (bc, bm) = mode::common_run(Self::NAME, m).unwrap();
 
-        let ipaths = bm
-            .get_many::<PathBuf>("file")
-            .map(|x| x.cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
-        let opaths = bm
-            .get_many::<PathBuf>("output")
-            .map(|x| x.cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
-        let msg = bm.get_one::<String>("msg");
+    pub fn run(&self, pipe: Option<&[u8]>) -> anyhow::Result<Vec<u8>> {
+        let mut kdf = self.kdf.clone();
+        kdf.set_ksize(self.block_type.key_size());
+        let key = kdf.run()?;
+        let mut mac = self.cmac(key)?;
 
-        assert_eq!(
-            ipaths.len(),
-            opaths.len(),
-            "the file path numbers must equal to output path numbers"
-        );
-
-        let mut cmac = Vec::with_capacity(bc.len());
-        for x in bc {
-            cmac.push(CMAC::new(x).unwrap())
+        if let Some(pipe) = pipe {
+            mac.write_all(pipe)?;
         }
 
-        if let Some(msg) = msg {
-            if let Some(mut c) = cmac.pop() {
-                c.write_all(msg.as_bytes()).unwrap();
-                let mac = c.mac();
-                for x in mac {
-                    print!("{:02x}", x);
-                }
-                println!();
-            }
+        if let Some(s) = self.str.as_deref() {
+            mac.write_all(s.as_bytes())?;
         }
 
-        if cmac.len() < 2 {
-            for (mut c, (ipath, opath)) in cmac.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                let data = std::fs::read(ipath).unwrap();
-                c.write_all(data.as_slice()).unwrap();
-                std::fs::write(opath, data).unwrap();
-            }
-        } else {
-            let x = scope::<'_, _, Result<()>>(move |s| {
-                for (mut c, (ipath, opath)) in cmac.into_iter().zip(ipaths.into_iter().zip(opaths))
-                {
-                    s.spawn::<_, Result<()>>(move || {
-                        let data = std::fs::read(ipath)?;
-                        c.write_all(data.as_slice())?;
-                        std::fs::write(opath, data)?;
-                        Ok(())
-                    });
-                }
-                Ok(())
-            });
-
-            x.unwrap();
+        if let Some(f) = self.file.as_deref() {
+            let s = std::fs::read(f)?;
+            mac.write_all(&s)?;
         }
+
+        Ok(mac.mac())
     }
 }

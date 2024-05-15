@@ -1,13 +1,13 @@
 use super::{CodeInfo, ResourceInfo, Resources};
-use crate::{error::MyError, fs::LangInfo, ty::TableShow};
+use crate::ty::TableShow;
 use chrono::{DateTime, Utc};
+use semver::Version;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{
     collections::HashMap,
     fmt::Display,
     path::{Path, PathBuf},
-    str::FromStr,
+    time::SystemTime,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ pub struct GitInfo {
     name: String,
     path: PathBuf,
     url: Option<String>,
-    modified: Option<String>,
+    modified: Option<SystemTime>,
     code_info: Option<CodeInfo>,
 }
 
@@ -45,8 +45,8 @@ impl GitInfo {
             self.url = Some(url.to_string());
         }
 
-        if let Some(modified) = other.modified.as_ref() {
-            self.modified = Some(modified.to_string());
+        if let Some(m) = other.modified {
+            self.modified = Some(m);
         }
 
         if let Some(code) = other.code_info.as_ref() {
@@ -71,9 +71,13 @@ impl GitInfo {
         self
     }
 
-    pub fn set_modified(mut self, modified_time: &str) -> Self {
-        self.modified = Some(modified_time.to_string());
+    pub fn set_modified(mut self, modified_time: SystemTime) -> Self {
+        self.modified = Some(modified_time);
         self
+    }
+
+    pub fn modified(&self) -> Option<SystemTime> {
+        self.modified
     }
 
     pub fn set_code_info(mut self, code_info: CodeInfo) -> Self {
@@ -81,12 +85,17 @@ impl GitInfo {
         self
     }
 
+    fn systemtime_to_string(time: Option<SystemTime>) -> String {
+        time.map(|x| format!("{}", DateTime::<Utc>::from(x).format("%Y/%m/%d-%H:%M:%S")))
+            .unwrap_or_default()
+    }
+
     fn to_vec_string(&self) -> Vec<String> {
         vec![
             self.name.clone(),
             format!("{}", self.path.display()),
             self.url.as_ref().cloned().unwrap_or_default(),
-            self.modified.as_ref().cloned().unwrap_or_default(),
+            Self::systemtime_to_string(self.modified),
         ]
     }
 }
@@ -106,10 +115,7 @@ impl From<&ResourceInfo> for GitInfo {
             .unwrap_or_default();
         let m = if let Some(m) = value.metadata() {
             match m.modified() {
-                Ok(m) => Some(format!(
-                    "{}",
-                    DateTime::<Utc>::from(m).format("%Y/%m/%d-%H:%M:%S")
-                )),
+                Ok(m) => Some(m),
                 Err(e) => {
                     log::error!(
                         "get modified time failed in `{}`, due to {e}",
@@ -143,9 +149,9 @@ impl Display for GitInfo {
         f.write_str(" | ")?;
         f.write_fmt(format_args!("{}", self.path.display()))?;
 
-        if let Some(modified) = self.modified.as_ref() {
+        if let Some(modified) = self.modified {
             f.write_str(" | ")?;
-            f.write_str(modified.as_str())?;
+            f.write_str(&Self::systemtime_to_string(Some(modified)))?;
         }
 
         Ok(())
@@ -164,14 +170,26 @@ impl<'a> Iterator for GitResIter<'a, GitInfo> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GitRes {
+    version: Version,
     info: Vec<GitInfo>,
 }
 
+impl Default for GitRes {
+    fn default() -> Self {
+        Self {
+            version: GitRes::VERSION,
+            info: vec![],
+        }
+    }
+}
+
 impl GitRes {
+    const VERSION: Version = Version::new(0, 1, 0);
+
     pub fn new() -> Self {
-        Self { info: vec![] }
+        Self::default()
     }
 
     pub fn add_git_info(&mut self, info: &GitInfo) {
@@ -236,9 +254,9 @@ impl GitRes {
         self.info.clear();
     }
 
-    /// 去掉重复的条目, 以仓库url为id键值
-    pub fn reduce(&mut self, is_check: bool) {
-        let mut res = HashMap::with_capacity(256);
+    /// 以仓库url为id键值, 检查重复的仓库并返回. 另, `self`删掉不存在的仓库.
+    pub fn reduce(&mut self, is_check: bool) -> GitRes {
+        let mut res: HashMap<Option<String>, Vec<GitInfo>> = HashMap::with_capacity(256);
         for item in self.iter() {
             res.entry(item.url.clone())
                 .or_insert(Vec::with_capacity(1))
@@ -255,7 +273,7 @@ impl GitRes {
         for info in res {
             if let Some(x) = dup.get_mut(&info.url) {
                 if let Some(idx) = x.iter().enumerate().find(|x| x.1.path() == info.path()) {
-                    if !info.path().exists() {
+                    if is_check && !info.path().exists() {
                         x.swap_remove(idx.0);
                         continue;
                     }
@@ -273,96 +291,7 @@ impl GitRes {
                 show.append_git_infos(v.as_slice());
             }
         }
-        println!("{}", show);
-    }
-
-    /// 解析my.nu nullshell脚本生成的资源文件
-    pub fn from_my_res(path: &Path) -> Result<Self, MyError> {
-        if !path.is_file() {
-            return Err(MyError::PathNotExist(format!(
-                "`{}` is not exist",
-                path.display()
-            )));
-        }
-
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            MyError::JsonParseFailed(format!(
-                "read `{}` to string failed due to {}",
-                path.display(),
-                e
-            ))
-        })?;
-
-        let json = Value::from_str(&content).map_err(|e| {
-            MyError::JsonParseFailed(format!(
-                "parse `{}` to json failed due to {}",
-                path.display(),
-                e
-            ))
-        })?;
-
-        let mut git_res = GitRes::new();
-        if let Value::Array(json) = json {
-            for val in json {
-                let mut info = GitInfo::new(Path::new(val["path"].as_str().unwrap()));
-                if let Some(url) = val["url"].as_str() {
-                    if !url.is_empty() {
-                        info = info.set_url(url);
-                    }
-                }
-
-                if let Some(modified) = val["modified"].as_str() {
-                    if !modified.is_empty() {
-                        info = info.set_modified(modified);
-                    }
-                }
-
-                if let Some(code) = val["info"].as_array() {
-                    let mut code_info = CodeInfo::new();
-
-                    for ele in code.iter() {
-                        if let Value::Object(ele) = ele {
-                            let mut lang = if let Some(s) = ele["language"].as_str() {
-                                LangInfo::new(s)
-                            } else {
-                                continue;
-                            };
-
-                            if let Some(files) = ele["files"].as_u64() {
-                                lang = lang.set_files(files as usize);
-                            }
-
-                            if let Some(code) = ele["code"].as_u64() {
-                                lang = lang.set_codes(code as usize);
-                            }
-
-                            if let Some(comments) = ele["comments"].as_u64() {
-                                lang = lang.set_comments(comments as usize);
-                            }
-
-                            if let Some(blanks) = ele["blanks"].as_u64() {
-                                lang = lang.set_blanks(blanks as usize);
-                            }
-
-                            code_info.add_lang(lang);
-                        }
-                    }
-
-                    if !code_info.is_empty() {
-                        info = info.set_code_info(code_info);
-                    }
-                }
-
-                git_res.add_git_info(&info);
-            }
-        } else {
-            return Err(MyError::JsonParseFailed(format!(
-                "`{}` content is not json array",
-                path.display()
-            )));
-        }
-
-        Ok(git_res)
+        show
     }
 }
 
@@ -404,7 +333,10 @@ impl Display for GitRes {
 
 impl From<GitInfo> for GitRes {
     fn from(value: GitInfo) -> Self {
-        Self { info: vec![value] }
+        Self {
+            version: Self::VERSION,
+            info: vec![value],
+        }
     }
 }
 

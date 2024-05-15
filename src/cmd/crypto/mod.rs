@@ -1,129 +1,205 @@
-use super::Cmd;
-use anyhow::Result;
-use cipher::Cipher;
-use clap::{ArgMatches, Command};
-use std::{
-    fs::{read, write},
-    path::PathBuf,
-    thread::scope,
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
+use self::{
+    ae::{CCMArgs, GCMArgs},
+    block::BlockCryptoArgs,
+    mode::{CBCArgs, CBCCSArgs, CFBArgs, CTRArgs, ECBArgs, OFBArgs},
+    rsa::RSAArgs,
+    zuc::ZUCArgs,
 };
+use super::{args::IOArgs, config::MyConfig};
+use crate::cmd::crypto::header::Header;
+use clap::{Args, Subcommand};
 
+pub mod ae;
 pub mod block;
-pub use block::{AES128Cmd, AES192Cmd, AES256Cmd, SM4Cmd};
-
+pub mod header;
 pub mod mode;
-pub use mode::{CBCCmd, CBCsCmd, CFBCmd, CTRCmd, ECBCmd, OFBCmd};
+pub mod rsa;
+pub mod zuc;
 
-mod stream;
-pub use stream::ZUCCmd;
+#[derive(Args)]
+#[command(about = "Cipher(PIPE | STRING | file)")]
+pub struct CryptoArgs {
+    #[command(subcommand)]
+    c: CryptoSubArgs,
+}
 
-mod ae;
-pub use ae::{CCMCmd, GCMCmd};
+#[derive(Args, Clone)]
+#[command(mut_arg("exclude", |a| a.hide(false)))]
+pub struct CryptoCommonArgs {
+    #[arg(value_name = "STRING")]
+    pub msg: Option<String>,
 
-fn common_crypto(mut c: Vec<Box<dyn Cipher + Send + Sync>>, m: &ArgMatches) -> Result<()> {
-    let ipaths = m
-        .get_many::<PathBuf>("file")
-        .map(|x| x.cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let opaths = m
-        .get_many::<PathBuf>("output")
-        .map(|x| x.cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let msg = m.get_one::<String>("msg");
-    let is_decrypt = m.get_flag("decrypt");
+    #[command(flatten)]
+    pub io: IOArgs,
 
-    anyhow::ensure!(
-        ipaths.len() == opaths.len(),
-        "the file path numbers must equal to output path numbers"
-    );
-    if let Some(msg) = msg {
-        if let Some(c) = c.pop() {
-            let mut buf = Vec::with_capacity(128);
-            if is_decrypt {
-                c.decrypt(msg.as_bytes(), &mut buf)?;
-            } else {
-                c.encrypt(msg.as_bytes(), &mut buf)?;
-            }
-            for x in buf {
-                print!("{:02x}", x);
-            }
-            println!();
-        }
-    }
+    #[arg(short, long, help = "enable decrypt")]
+    pub decrypt: bool,
 
-    if c.len() < 2 {
-        for (c, (ipath, opath)) in c.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-            let (data, mut buf) = (read(ipath)?, Vec::with_capacity(1024));
-            if is_decrypt {
-                c.decrypt(&data, &mut buf)?;
-            } else {
-                c.encrypt(&data, &mut buf)?;
-            }
-            write(opath, buf)?;
-        }
-        Ok(())
-    } else {
-        scope::<'_, _, Result<()>>(move |s| {
-            for (c, (ipath, opath)) in c.into_iter().zip(ipaths.into_iter().zip(opaths)) {
-                s.spawn::<_, Result<()>>(move || {
-                    let (data, mut buf) = (read(ipath)?, Vec::with_capacity(1024));
-                    if is_decrypt {
-                        c.decrypt(&data, &mut buf)?;
-                    } else {
-                        c.encrypt(&data, &mut buf)?;
-                    }
-                    write(opath, buf)?;
-                    Ok(())
-                });
-            }
-            Ok(())
-        })
+    #[arg(
+        long = "check-hash",
+        help = "check content hash force to encrypt. notice: this should not used when key changed"
+    )]
+    check_hash: bool,
+}
+
+#[derive(Subcommand)]
+pub enum CryptoSubArgs {
+    Detect {
+        #[arg(value_name = "PATH")]
+        #[arg(help = "the input file path")]
+        ifile: PathBuf,
+    },
+    #[command(alias = "blk")]
+    Block(BlockCryptoArgs),
+    ECB(ECBArgs),
+    CBC(CBCArgs),
+    CFB(CFBArgs),
+    OFB(OFBArgs),
+    CTR(CTRArgs),
+    CBCCS(CBCCSArgs),
+    ZUC(ZUCArgs),
+    CCM(CCMArgs),
+    GCM(GCMArgs),
+    RSA(RSAArgs),
+}
+
+impl CryptoArgs {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        self.c.exe(pipe)
     }
 }
 
-#[derive(Clone)]
-pub struct CryptoCmd;
-
-impl Cmd for CryptoCmd {
-    const NAME: &'static str = "c";
-    fn cmd() -> clap::Command {
-        Command::new(Self::NAME)
-            .about("crypto")
-            .subcommand_required(true)
-            .subcommand(SM4Cmd::cmd())
-            .subcommand(AES128Cmd::cmd())
-            .subcommand(AES192Cmd::cmd())
-            .subcommand(AES256Cmd::cmd())
-            .subcommand(ECBCmd::cmd())
-            .subcommand(CBCCmd::cmd())
-            .subcommand(CFBCmd::cmd())
-            .subcommand(OFBCmd::cmd())
-            .subcommand(CTRCmd::cmd())
-            .subcommand(CBCsCmd::cmd())
-            .subcommand(ZUCCmd::cmd())
-            .subcommand(CCMCmd::cmd())
-            .subcommand(GCMCmd::cmd())
+impl CryptoSubArgs {
+    pub fn exe(self, pipe: Option<&[u8]>) {
+        match self {
+            CryptoSubArgs::Detect { ifile } => {
+                let f = File::open(ifile).unwrap();
+                let header = Header::from_reader(f).unwrap();
+                println!("{}", header);
+            }
+            CryptoSubArgs::Block(a) => a.exe(pipe),
+            CryptoSubArgs::ECB(a) => a.exe(pipe),
+            CryptoSubArgs::CBC(a) => a.exe(pipe),
+            CryptoSubArgs::CFB(a) => a.exe(pipe),
+            CryptoSubArgs::OFB(a) => a.exe(pipe),
+            CryptoSubArgs::CTR(a) => a.exe(pipe),
+            CryptoSubArgs::CBCCS(a) => a.exe(pipe),
+            CryptoSubArgs::ZUC(a) => a.exe(pipe),
+            CryptoSubArgs::CCM(a) => a.exe(pipe),
+            CryptoSubArgs::GCM(a) => a.exe(pipe),
+            CryptoSubArgs::RSA(a) => a.exe(pipe),
+        }
     }
-    fn run(&self, m: &clap::ArgMatches) {
-        let Some((name, sm)) = m.subcommand() else {
-            panic!("need to specify the subcommond for the crypto cmd");
+}
+
+impl CryptoCommonArgs {
+    pub fn assert_only_one_datasource(&self, pipe: Option<&[u8]>) -> anyhow::Result<()> {
+        let datasource =
+            pipe.is_some() as u8 + self.io.is_have_ifile() as u8 + self.msg.is_some() as u8;
+        if datasource > 1 {
+            anyhow::bail!("only input the one input data source of <PIPE | STRING | ifile>");
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn exe(self, data: &[u8]) {
+        let mut ostream = self
+            .io
+            .writer_with_default(MyConfig::config().tmp_buf_size)
+            .unwrap();
+        ostream.write_all(data).unwrap();
+    }
+
+    fn read_data<'a>(
+        &self,
+        data: &'a [u8],
+        io_arg: &IOArgs,
+    ) -> anyhow::Result<Option<(&'a [u8], Header)>> {
+        if self.decrypt {
+            let header = Header::try_from(data)?;
+            Ok(Some((&data[header.size()..], header)))
+        } else {
+            let digest = if self.check_hash {
+                if let Some(file_path) = io_arg.file_path() {
+                    Header::extract_digest(file_path)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut header = Header::new(String::default());
+            header.set_filename(io_arg.file_path());
+            header.hash(data);
+
+            if Some(header.digest()) == digest.as_deref() {
+                match io_arg.ofile.as_deref() {
+                    Some(x) => {
+                        log::info!(
+                            "the data hash equal to encrypted file hash: `{:?}`",
+                            x.display()
+                        );
+                    }
+                    None => {
+                        log::info!("the data hash equal to encrypted file hash");
+                    }
+                }
+                Ok(None)
+            } else {
+                Ok(Some((data, header)))
+            }
+        }
+    }
+
+    fn read_from_ioargs(&self, io_arg: &IOArgs) -> anyhow::Result<Option<(Vec<u8>, Header)>> {
+        let Some(data) = io_arg.read_all_data()? else {
+            return Ok(None);
         };
 
-        match name {
-            SM4Cmd::NAME => SM4Cmd.run(sm),
-            AES128Cmd::NAME => AES128Cmd.run(sm),
-            AES192Cmd::NAME => AES192Cmd.run(sm),
-            AES256Cmd::NAME => AES256Cmd.run(sm),
-            ECBCmd::NAME => ECBCmd.run(sm),
-            CBCCmd::NAME => CBCCmd.run(sm),
-            CFBCmd::NAME => CFBCmd.run(sm),
-            OFBCmd::NAME => OFBCmd.run(sm),
-            CTRCmd::NAME => CTRCmd.run(sm),
-            CBCsCmd::NAME => CBCsCmd.run(sm),
-            ZUCCmd::NAME => ZUCCmd.run(sm),
-            CCMCmd::NAME => CCMCmd.run(sm),
-            GCMCmd::NAME => GCMCmd.run(sm),
-            x => panic!("not support the subcommond {x}"),
+        self.read_data(&data, io_arg)
+            .map(|x| x.map(|y| (y.0.to_vec(), y.1)))
+    }
+
+    fn write_data(&self, header: Header, data: &[u8], io_arg: &IOArgs) -> anyhow::Result<()> {
+        let mut writer = io_arg.writer_with_default(MyConfig::config().tmp_buf_size)?;
+
+        if self.decrypt {
+            if !header.valid_hash(data) {
+                if let Some(x) = io_arg.file_path() {
+                    anyhow::bail!("invalid data hash `{}`", x.display());
+                } else {
+                    anyhow::bail!("invalid data hash");
+                }
+            }
+            writer.write_all(data)?;
+        } else {
+            let v = Vec::from(header);
+            let _ = writer.write(&v)?;
+            writer.write_all(data)?;
         }
+
+        match io_arg.file_path() {
+            Some(ofile) => {
+                log::info!(
+                    "SUCCESS({}) {}",
+                    if self.decrypt { "decrypt" } else { "encrypt" },
+                    ofile.display()
+                );
+            }
+            None => {
+                log::info!(
+                    "SUCCESS({})",
+                    if self.decrypt { "decrypt" } else { "encrypt" }
+                );
+            }
+        }
+
+        Ok(())
     }
 }

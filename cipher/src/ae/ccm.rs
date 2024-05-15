@@ -269,13 +269,13 @@ where
         self.mac_size
     }
 
-    fn auth_encrypt<R: Read, W: Write>(
+    fn auth_encrypt_mac<R: Read, W: Write>(
         &self,
         nonce: &[u8],
         associated_data: &[u8],
         in_data: &mut R,
         out_data: &mut W,
-    ) -> Result<(usize, usize), CipherError> {
+    ) -> Result<(usize, usize, Vec<u8>), CipherError> {
         let mut payload = Vec::with_capacity(2048);
         in_data
             .read_to_end(&mut payload)
@@ -304,7 +304,11 @@ where
             .write_all(&mac[..self.mac_size])
             .map_err(CipherError::from)?;
 
-        Ok((payload.len(), payload.len() + self.mac_size))
+        Ok((
+            payload.len(),
+            payload.len() + self.mac_size,
+            mac[..self.mac_size].to_vec(),
+        ))
     }
 
     fn auth_decrypt<R: Read, W: Write>(

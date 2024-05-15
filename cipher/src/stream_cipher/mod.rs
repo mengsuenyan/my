@@ -282,6 +282,65 @@ where
     }
 }
 
+impl StreamEncryptX for Box<dyn StreamCipherX + Send + Sync + 'static> {
+    fn stream_encrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        (**self).stream_encrypt_x(in_data, out_data)
+    }
+    fn stream_encrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        (**self).stream_encrypt_finish_x(out_data)
+    }
+}
+
+impl StreamDecryptX for Box<dyn StreamCipherX + Send + Sync + 'static> {
+    fn stream_decrypt_x(
+        &mut self,
+        in_data: &[u8],
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        (**self).stream_decrypt_x(in_data, out_data)
+    }
+
+    fn stream_decrypt_finish_x(
+        &mut self,
+        out_data: &mut Vec<u8>,
+    ) -> Result<(usize, usize), CipherError> {
+        (**self).stream_decrypt_finish_x(out_data)
+    }
+}
+
+impl Encrypt for Mutex<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+    fn encrypt(&self, plaintext: &[u8], ciphertext: &mut Vec<u8>) -> Result<(), CipherError> {
+        match self.lock() {
+            Ok(mut c) => {
+                c.stream_encrypt_x(plaintext, ciphertext)?;
+                c.stream_encrypt_finish_x(ciphertext)?;
+                Ok(())
+            }
+            Err(e) => Err(CipherError::Other(format!("{e}"))),
+        }
+    }
+}
+
+impl Decrypt for Mutex<Box<dyn StreamCipherX + Send + Sync + 'static>> {
+    fn decrypt(&self, ciphertext: &[u8], plaintext: &mut Vec<u8>) -> Result<(), CipherError> {
+        match self.lock() {
+            Ok(mut c) => {
+                c.stream_decrypt_x(ciphertext, plaintext)?;
+                c.stream_decrypt_finish_x(plaintext)?;
+                Ok(())
+            }
+            Err(e) => Err(CipherError::Other(format!("{e}"))),
+        }
+    }
+}
+
 pub mod zuc;
 pub use crate::ae::{AES128GcmStream, AES192GcmStream, AES256GcmStream, AESGcmStream, GcmStream};
 pub use crate::cipher_mode;
