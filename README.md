@@ -1,13 +1,11 @@
 # my
 
-用于个人本地资源管理
+## usage
 
-## TODO Lists
+```shell
+./my -h
+```
 
-### 原理
+## doc
 
-- 深入学习加密背后的数学原理;
-
-### Cipher
-
-- CBC-CS: 需要增加更全的单元测试;
+[README](./README.typ)
