@@ -69,7 +69,7 @@ impl Info for KDFSubArgs {
                 }
             }
             KDFSubArgs::PBKDF1(a) => format!("pbkdf1/{}", a.h.name()),
-            KDFSubArgs::PBKDF2(a) => format!("pbkdf1/{}", a.h.name()),
+            KDFSubArgs::PBKDF2(a) => format!("pbkdf2/{}", a.h.name()),
             KDFSubArgs::Scrypt(_) => "scrypt".to_string(),
             KDFSubArgs::Argon2(_) => "argon2".to_string(),
             KDFSubArgs::RSA(_) => "rsa".to_string(),
