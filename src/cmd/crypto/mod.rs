@@ -121,7 +121,13 @@ impl CryptoCommonArgs {
         io_arg: &IOArgs,
     ) -> anyhow::Result<Option<(&'a [u8], Header)>> {
         if self.decrypt {
-            let header = Header::try_from(data)?;
+            let header = Header::try_from(data).map_err(|e| {
+                if let Some(x) = io_arg.file_path() {
+                    anyhow::Error::msg(format!("{e}, {}", x.display()))
+                } else {
+                    e
+                }
+            })?;
             Ok(Some((&data[header.size()..], header)))
         } else {
             let digest = if self.check_hash {
