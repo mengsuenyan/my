@@ -24,8 +24,8 @@ pub struct RSAArgs {
 
 #[derive(Subcommand)]
 pub enum RSASubArgs {
-    PKCS1(PKCS1Args),
-    OAEP(OAEPArgs),
+    PKCS1(Box<PKCS1Args>),
+    OAEP(Box<OAEPArgs>),
 }
 
 #[derive(Args)]

@@ -103,6 +103,8 @@ impl Git {
 
     /// git remote -v
     pub fn remote(&self, path: &Path, is_only_url: bool) -> anyhow::Result<GitInfo> {
+        let path = path.canonicalize()?;
+        let path = path.as_path();
         let cur_dir = Self::cur_dir()?;
         let _guard = WorkingdirGuard::new(cur_dir.as_path(), path)?;
         let s = Self::git(StdCommand::new("git").args(["remote", "-v"]))?;

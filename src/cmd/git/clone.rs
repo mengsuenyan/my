@@ -121,7 +121,10 @@ impl CloneArgs {
                     if let Some(Some(p)) = url.path_segments().map(|p| p.last()) {
                         let path = odir.join(p.trim_end_matches(".git"));
                         match git.remote(&path, false) {
-                            Ok(info) => git_res.add_git_info(&info),
+                            Ok(info) => {
+                                git_res.add_git_info(&info);
+                                git.update_res_file(&git_res);
+                            }
                             Err(e) => {
                                 log::error!("{e}");
                             }
@@ -150,6 +153,8 @@ impl CloneArgs {
             if !urls.is_empty() {
                 git.sleep();
             }
+
+            println!("{}", git_res);
         }
     }
 }
