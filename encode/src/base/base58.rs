@@ -76,7 +76,7 @@ impl Encode for Base58 {
         let mut itr = b58.iter().skip(size - len);
 
         for _ in 0..leading_zeros {
-            out_data.write_all(&[b'1'])?;
+            out_data.write_all(&[b'1'; 1])?;
         }
 
         let mut olen = leading_zeros;

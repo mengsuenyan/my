@@ -152,10 +152,9 @@ impl StandardArgs {
         mut h: T,
         pipe: Option<I>,
     ) -> Vec<u8> {
-        let file = self.file.map(|f| {
+        let file = self.file.inspect(|f| {
             assert!(f.exists(), "{} is not exist", f.display());
             assert!(f.is_file(), "{} is not a file", f.display());
-            f
         });
 
         if let Some(p) = pipe {

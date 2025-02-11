@@ -11,8 +11,10 @@ use std::ops::{BitXorAssign, Deref, DerefMut};
 /// - keccak-p[b,nr]: b定义置换宽度, nr定义置换轮数; <br>
 ///   - 输入: 位宽度为b的字串, 置换轮数;
 ///   - 输出: 位宽度为b的置换后字串;
+///
 /// keccak-f[b] = keccak-p[b,24]; <br>
 ///   - 特化的keccak-p[b,nr], `nr = 12 + 2*l`;
+///
 /// keccak[c] = keccak-f[1600]; <br>
 ///   - `Sponge[keccak-p[1600,24], pad10*1, 1600 - c]`, `c=1600-r`. `r`是位率, 即字串N的分组大小;
 ///   - `keccak[c](N,d) = Sponge[keccak-p[1600,24], pad10*1, 1600 - c](N, d)`, d是输出字串的位长度;
